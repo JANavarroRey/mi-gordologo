@@ -33,50 +33,52 @@ export function AppLayout() {
 
   return (
     <div className="flex flex-col min-h-screen bg-neutral-100/70 text-neutral-800 font-sans antialiased">
-      <header className="flex-none bg-white border-b border-neutral-200/80 px-4 py-2.5 sticky top-0 z-30 shadow-xs">
-        <div className="flex items-center justify-between max-w-md mx-auto">
-          <div className="flex items-center space-x-2.5">
+      <header className="flex-none bg-white border-b border-neutral-200/80 px-3 py-2 sticky top-0 z-30 shadow-xs">
+        <div className="flex items-center gap-2 max-w-md mx-auto">
+          {/* Marca: icono del muñeco + título en 1 línea */}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <img
-              src={assetUrl('logo.jpg')}
-              alt="Mi Gordólogo"
-              className="h-11 w-auto max-w-[48px] object-contain shrink-0 rounded-lg"
+              src={assetUrl('apple-touch-icon.jpg')}
+              alt=""
+              className="h-9 w-9 rounded-xl object-cover shrink-0 ring-1 ring-emerald-100"
               onError={(e) => {
-                (e.currentTarget as HTMLElement).style.display = 'none';
+                (e.currentTarget as HTMLImageElement).src = assetUrl('logo.jpg');
               }}
             />
-            <div className="flex flex-col justify-center">
-              <h1 className="text-base font-extrabold font-display text-neutral-900 tracking-tight leading-tight">
+            <div className="min-w-0">
+              <h1 className="text-[15px] sm:text-base font-extrabold font-display text-neutral-900 tracking-tight leading-none whitespace-nowrap">
                 Mi Gordólogo
               </h1>
-              <p className="text-[11px] font-bold text-emerald-700 italic leading-tight">
+              <p className="text-[10px] font-bold text-emerald-700 italic leading-none mt-0.5 whitespace-nowrap">
                 Adelgaza sin comer
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-1.5">
+          {/* Acciones compactas */}
+          <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => setShowChat(true)}
               title="Preguntar al Gordólogo"
-              className="h-10 w-10 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center justify-center transition-colors"
+              className="h-9 w-9 min-h-9 min-w-9 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center justify-center transition-colors"
               aria-label="Preguntar al Gordólogo"
             >
               <MessageCircle className="w-4 h-4" />
             </button>
             <button
               onClick={() => setShowTutorialModal(true)}
-              title="Ver guía de uso paso a paso"
-              className="h-10 px-2.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold flex items-center space-x-1 transition-colors"
+              title="Ayuda"
+              className="h-9 w-9 min-h-9 min-w-9 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 flex items-center justify-center transition-colors"
+              aria-label="Ayuda"
             >
               <HelpCircle className="w-4 h-4 text-emerald-700" />
-              <span className="text-[11px] font-bold">Ayuda</span>
             </button>
             <button
               onClick={() => setShowUserModal(true)}
               title="Cambiar de usuario"
-              className="h-10 px-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200/80 text-xs font-bold flex items-center space-x-1 transition-colors"
+              className="h-9 min-h-9 pl-2.5 pr-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200/80 text-xs font-bold flex items-center gap-0.5 transition-colors"
             >
-              <span className="max-w-[80px] truncate text-[11px]">
+              <span className="max-w-[4.5rem] truncate text-[11px]">
                 {activeUser.name.split(' ')[0]}
               </span>
               <ChevronDown className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
