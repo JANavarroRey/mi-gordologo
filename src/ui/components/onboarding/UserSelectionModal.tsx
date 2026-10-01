@@ -40,7 +40,7 @@ export const UserSelectionModal: React.FC<Props> = ({
         {/* Cabecera con Logo V3 integrado */}
         <div className="text-center mb-5">
           <img
-            src={assetUrl('logo.svg')}
+            src={assetUrl('logo.jpg')}
             alt="Mi Gordólogo"
             className="h-24 w-auto mx-auto object-contain mb-2"
             onError={(e) => {

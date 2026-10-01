@@ -83,18 +83,20 @@ button, a {
   outline-offset: 2px;
 }
 
-/* === ESTILOS DE IMPRESIÓN Y EXPORTACIÓN A PDF EN TABLA (1 SOLA HOJA A4) === */
+/* === ESTILOS DE IMPRESIÓN — 1 HOJA A4 HORIZONTAL === */
 @media print {
   @page {
     size: A4 landscape;
-    margin: 8mm 6mm;
+    margin: 6mm;
   }
 
-  body {
+  html, body {
     background-color: #ffffff !important;
     color: #111827 !important;
-    font-size: 8.5pt !important;
-    line-height: 1.25 !important;
+    font-size: 8pt !important;
+    line-height: 1.2 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   header, nav, footer, button, .print-hide, .print\:hidden {
@@ -102,15 +104,26 @@ button, a {
   }
 
   main {
-    max-width: 100% !important;
+    max-width: none !important;
+    width: 100% !important;
     padding: 0 !important;
     margin: 0 !important;
+    overflow: visible !important;
   }
 
-  /* Evitar saltos de página en mitad de filas para meter todo en 1 hoja */
+  .print-menu-root {
+    display: block !important;
+  }
+
+  table {
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
+
   tr, td, th {
     page-break-inside: avoid;
     break-inside: avoid;
   }
 }
+
 

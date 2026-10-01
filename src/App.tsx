@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout } from './ui/components/layout/AppLayout';
+import { ScrollToTop } from './ui/components/layout/ScrollToTop';
 
 const MenuPage = lazy(() => import('./ui/pages/MenuPage').then((m) => ({ default: m.MenuPage })));
 const TrackingPage = lazy(() => import('./ui/pages/TrackingPage').then((m) => ({ default: m.TrackingPage })));
@@ -9,8 +10,9 @@ const ProfilePage = lazy(() => import('./ui/pages/ProfilePage').then((m) => ({ d
 
 function PageFallback() {
   return (
-    <div className="flex items-center justify-center min-h-[300px]">
+    <div className="flex flex-col items-center justify-center min-h-[300px] space-y-2">
       <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+      <p className="text-xs text-neutral-500">Cargando…</p>
     </div>
   );
 }
@@ -18,6 +20,7 @@ function PageFallback() {
 export default function App() {
   return (
     <HashRouter>
+      <ScrollToTop />
       <Suspense fallback={<PageFallback />}>
         <Routes>
           <Route element={<AppLayout />}>

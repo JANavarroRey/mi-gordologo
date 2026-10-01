@@ -56,13 +56,16 @@ Por favor, devuelve un JSON válido con el siguiente formato exacto (sin markdow
   ]
 }`;
 
-        const response = await client.interactions.create({
+        const response = await client.models.generateContent({
           model: 'gemini-2.0-flash',
-        input: prompt,
-        system_instruction: SYSTEM_INSTRUCTION,
-      });
+          contents: prompt,
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            responseMimeType: 'application/json',
+          },
+        });
 
-        const rawText = response.output_text || '';
+        const rawText = response.text || '';
         const jsonMatch = rawText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
@@ -78,7 +81,7 @@ Por favor, devuelve un JSON válido con el siguiente formato exacto (sin markdow
         }
 
         return {
-          message: rawText,
+          message: rawText || 'He procesado tu petición.',
         };
       } catch {
         // Silencioso: cae al motor offline
@@ -97,12 +100,16 @@ Por favor, devuelve un JSON válido con el siguiente formato exacto (sin markdow
     if (apiKey) {
       try {
         const client = new GoogleGenAI({ apiKey });
-        const response = await client.interactions.create({
+        const response = await client.models.generateContent({
           model: 'gemini-2.0-flash',
-          input: `Pregunta del paciente: "${question}"\n\nResponde en 3-6 frases claras, sin markdown complejo. Si la pregunta viola las prohibiciones del hospital (alcohol, azúcar, miel, cerveza sin alcohol), dilo con firmeza pero cariño.`,
-          system_instruction: SYSTEM_INSTRUCTION,
+          contents: `Pregunta del paciente: "${question}"
+
+Responde en español, 3-8 frases claras, sin markdown complejo.
+Si pregunta por calorías de algo concreto, da una estimación razonable.
+Si implica alcohol, azúcar, miel o cerveza sin alcohol: prohíbelo con firmeza pero cariño y sugiere alternativa.`,
+          config: { systemInstruction: SYSTEM_INSTRUCTION },
         });
-        const text = (response.output_text || '').trim();
+        const text = (response.text || '').trim();
         if (text) return text;
       } catch {
         // fallback offline
@@ -112,26 +119,32 @@ Por favor, devuelve un JSON válido con el siguiente formato exacto (sin markdow
   },
 
   fallbackNutritionAnswer(question: string): string {
-    const q = question.toLowerCase();
-    if (/cerveza|alcohol|vino|licor/.test(q)) {
-      return '🚫 En el protocolo del Morales Meseguer el alcohol está prohibido, incluida la cerveza sin alcohol. Sustitúyelo por agua, infusiones o caldo desgrasado. ¡Tu hígado y tu báscula te lo agradecerán!';
+    const q = question.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (/whisky|whiskey|ron|ginebra|vodka|copa|combinado|cuba libre|calimocho|cerveza|alcohol|vino|licor|chupito/.test(q)) {
+      return '🚫 En tu dieta de 1.500 kcal el alcohol está prohibido (whisky, vino, cerveza… también la sin alcohol). Un whisky con Coca-Cola puede sumar ~150–250 kcal vacías y sabotea el objetivo. Mejor: agua con gas y limón, o infusión. ¡Tu báscula te lo agradece! 🍋';
     }
-    if (/fruta|ración|racion/.test(q)) {
-      return '🍎 Una ración de fruta depende del grupo: A=300g (melón/sandía), B=200g (naranja/manzana), C=160g (plátano/uvas), D=100g (higos/desecadas). En comida y cena: 1 fruta o 2 yogures 0%.';
+    if (/caloria|kcal|cuantas|cuantos/.test(q) && /coca|refresco|boll|pan|chocolate|helado/.test(q)) {
+      return '📊 Orientativo: refresco de cola ~140 kcal/lata; croissant ~230; onza de chocolate ~70. Evita calorías vacías y céntrate en el menú. Antojo → yogur 0% o fruta del grupo correcto.';
     }
-    if (/antojo|dulce|chocolate|azúcar|azucar|miel/.test(q)) {
-      return '🍫 Azúcar, fructosa y miel están fuera del protocolo. Si llega el antojo: yogur desnatado, fruta del grupo correcto o una infusión. La recena (yogur o ½ vaso de leche) también ayuda a cerrar el día sin picoteo.';
+    if (/fruta|racion/.test(q)) {
+      return '🍎 Ración de fruta: A=300g (melón/sandía), B=200g (naranja/manzana), C=160g (plátano/uvas), D=100g (higos). Comida/cena: 1 fruta o 2 yogures 0%.';
+    }
+    if (/antojo|dulce|chocolate|azucar|miel|fructosa/.test(q)) {
+      return '🍫 Azúcar, fructosa y miel fuera. Antojo: yogur desnatado, fruta del grupo correcto o infusión. La recena ayuda a no picotear de noche.';
     }
     if (/agua|beber|hidrat/.test(q)) {
-      return '💧 Objetivo: al menos 1,5 litros de agua al día. Lleva siempre una botella encima y reparte sorbos entre tomas. El agua corporal baja es frecuente en esta dieta: hidratarse es parte del tratamiento.';
+      return '💧 Al menos 1,5 L de agua al día. Lleva botella y bebe entre tomas.';
     }
     if (/aceite|oliva/.test(q)) {
-      return '🫒 Aceite de oliva virgen extra medido: 1,5 cucharadas en comida y 1 cucharada en cena. No hace falta freír: aliña o cocina a la plancha/horno.';
+      return '🫒 AOVE: 1,5 cdas en comida y 1 cda en cena. Aliña o plancha/horno; evita freír.';
     }
     if (/pan|biscote/.test(q)) {
-      return '🍞 Pan integral: unos 20g (o 2 biscotes) en la mayoría de tomas. Si cocinas para dos, duplica solo las cantidades del menú, no “a ojo”.';
+      return '🍞 Pan integral: ~20 g (o 2 biscotes) en la mayoría de tomas.';
     }
-    return '📋 Sigue las 6 tomas del menú (desayuno → recena), mide el aceite, elige fruta por grupo A–D y evita alcohol/azúcar/miel. Si quieres un cambio de plato, usa “Ajustar” en el menú del día. ¡Estoy aquí para acompañarte! 🍋';
+    if (/peso|bajar|adelgaz|estanc/.test(q)) {
+      return '⚖️ Pésate el mismo día en ayunas. Si hay estancamiento: revisa aceite, pan, día libre y agua. En Seguimiento tienes el parte semanal del Gordólogo.';
+    }
+    return '📋 Puedo hablar de calorías, fruta, antojos, agua, aceite o peso. Para cambiar un plato usa “Ajustar” en el menú. Con clave Gemini en Perfil, las respuestas son más completas.';
   },
 
   /**

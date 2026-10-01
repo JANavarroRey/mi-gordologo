@@ -160,9 +160,13 @@ export const MenuPage: React.FC = () => {
   };
 
   const handlePrint = () => {
-    // La vista tabla está optimizada para 1 hoja A4
     setViewMode('table');
-    window.setTimeout(() => window.print(), 150);
+    // Pequeña espera para montar la tabla y forzar orientación horizontal en el diálogo
+    window.setTimeout(() => {
+      document.body.classList.add('printing-menu');
+      window.print();
+      window.setTimeout(() => document.body.classList.remove('printing-menu'), 500);
+    }, 200);
   };
 
   const buildDayShareText = () => {
@@ -216,7 +220,7 @@ export const MenuPage: React.FC = () => {
   return (
     <div className="space-y-3.5">
       {/* Selector de Raciones */}
-      <div className="flex items-center justify-between bg-white px-3.5 py-2.5 rounded-2xl border border-neutral-200/80 shadow-xs">
+      <div className="flex items-center justify-between bg-white px-3.5 py-2.5 rounded-2xl border border-neutral-200/80 shadow-xs print:hidden">
         <span className="text-xs font-semibold text-neutral-600">Cantidades para:</span>
         <div className="flex bg-neutral-100 p-0.5 rounded-xl text-xs font-bold">
           <button
@@ -253,7 +257,7 @@ export const MenuPage: React.FC = () => {
       </div>
 
       {/* Selector de Semanas y Conmutador de Vista */}
-      <div className="bg-white p-3 rounded-2xl shadow-xs border border-neutral-200/80 space-y-2.5">
+      <div className="bg-white p-3 rounded-2xl shadow-xs border border-neutral-200/80 space-y-2.5 print:hidden">
         <div className="flex items-center justify-between">
           {/* Selector de 8 semanas con scroll horizontal fluido */}
           <div className="flex space-x-1 flex-1 mr-2 overflow-x-auto py-0.5 scrollbar-none">
@@ -341,7 +345,7 @@ export const MenuPage: React.FC = () => {
       {/* VISTA 1: DÍA A DÍA (DETALLE DE LAS 5 COMIDAS) */}
       {/* ======================================================== */}
       {viewMode === 'daily' && (
-        <>
+        <div className="space-y-3.5 print:hidden">
           {/* Título del Día y Acciones */}
           <div className="flex items-center justify-between px-1">
             <div>
@@ -363,7 +367,7 @@ export const MenuPage: React.FC = () => {
                 )}
               </div>
               <p className="text-[11px] text-neutral-500">
-                Semana {activeWeek.weekNumber} · Dieta 1.500 kcal Morales Meseguer
+                Semana {activeWeek.weekNumber} · Menú 1.500 kcal
               </p>
             </div>
 
@@ -399,7 +403,7 @@ export const MenuPage: React.FC = () => {
               <h3 className="font-bold text-amber-900 text-base">¡Día libre de la dieta!</h3>
               <p className="text-sm text-amber-800 leading-relaxed max-w-sm mx-auto">
                 Hoy no hay menú hospitalario. Disfruta con la familia sin contar calorías.
-                Mañana retomamos las 1.500 kcal del Morales Meseguer.
+                Mañana retomamos el menú de 1.500 kcal.
               </p>
               <p className="text-[11px] text-amber-700/80 italic">
                 Decisión personal (no forma parte del protocolo clínico).
@@ -484,25 +488,28 @@ export const MenuPage: React.FC = () => {
             })}
           </div>
           )}
-        </>
+        </div>
       )}
 
       {/* ======================================================== */}
       {/* VISTA 2: TABLA MATRIZ SEMANAL COMPLETA (DE UN VISTAZO) */}
       {/* ======================================================== */}
       {viewMode === 'table' && (
-        <div className="space-y-3 animate-in fade-in">
-          {/* Header de la Tabla y botones de exportación */}
-          <div className="bg-white p-3.5 rounded-2xl border border-neutral-200/80 shadow-xs flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-neutral-900 font-display">
-                Semana {activeWeek.weekNumber} al Completo
-              </h2>
-              <p className="text-[11px] text-neutral-500">
-                Ideal para consultar de un vistazo o pegar en la nevera
-              </p>
+        <div className="space-y-3 animate-in fade-in print-menu-root">
+          {/* Barra compacta (solo pantalla) */}
+          <div className="bg-white px-3.5 py-2.5 rounded-2xl border border-neutral-200/80 shadow-xs flex items-center justify-between print:hidden">
+            <div className="flex items-center space-x-2 min-w-0">
+              <img src={assetUrl('logo.jpg')} alt="" className="h-8 w-8 rounded-lg object-cover shrink-0" />
+              <div className="min-w-0">
+                <h2 className="text-sm font-bold text-neutral-900 font-display truncate">
+                  Semana {activeWeek.weekNumber}
+                </h2>
+                <p className="text-[10px] text-neutral-500 truncate">
+                  {activeProfile.name} · {servings === 1 ? '1 ración' : '2 raciones'}
+                </p>
+              </div>
             </div>
-            <div className="flex space-x-1.5">
+            <div className="flex space-x-1.5 shrink-0">
               <button
                 onClick={handleShareWeekWhatsApp}
                 title="Compartir semana por WhatsApp"
@@ -513,74 +520,47 @@ export const MenuPage: React.FC = () => {
               </button>
               <button
                 onClick={handlePrint}
-                title="Imprimir para la nevera"
-                className="px-2.5 py-1.5 rounded-xl bg-neutral-800 text-white hover:bg-neutral-900 text-xs font-bold flex items-center space-x-1 transition-colors shadow-2xs"
+                title="Imprimir / PDF horizontal"
+                className="px-2.5 py-1.5 rounded-xl bg-neutral-800 text-white hover:bg-neutral-900 text-xs font-bold flex items-center space-x-1 transition-colors"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Imprimir</span>
+                <span>PDF</span>
               </button>
             </div>
           </div>
 
-          {/* ======================================================== */}
-          {/* TABLA MATRIZ CLÍNICA SEMANAL (PANTALLA Y EXPORTACIÓN PDF) */}
-          {/* ======================================================== */}
-          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden print:border-none print:shadow-none print:m-0">
-            {/* Cabecera Oficial para Pantalla (Oculta al Imprimir a petición del usuario) */}
-            <div className="p-3.5 bg-emerald-800 text-white print:hidden">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2.5">
-                  <img src={assetUrl('logo.svg')} alt="Mi Gordólogo" className="h-10 w-auto object-contain rounded-md" />
-                  <div>
-                    <h3 className="font-extrabold text-sm sm:text-base font-display leading-tight">
-                      Mi Gordólogo — Menú Semanal (Semana {activeWeek.weekNumber})
-                    </h3>
-                    <p className="text-[11px] text-emerald-100 font-medium">
-                      Dieta Clínica 1.500 kcal · Hospital Morales Meseguer (Murcia)
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right text-[11px] text-emerald-100 font-medium shrink-0">
-                  <div><span className="font-bold">Usuario:</span> {activeProfile.name}</div>
-                  <div><span className="font-bold">Raciones:</span> {servings === 1 ? '1 Persona' : '2 Personas'}</div>
-                </div>
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden print:border-none print:shadow-none print:m-0 print:rounded-none">
+            {/* Cabecera mínima solo impresión */}
+            <div className="hidden print:flex items-center justify-between border-b border-neutral-800 pb-1 mb-1 text-[10px] text-neutral-900">
+              <div className="font-extrabold">
+                Mi Gordólogo — Semana {activeWeek.weekNumber}
+              </div>
+              <div className="text-neutral-600">
+                {activeProfile.name} · {servings === 1 ? '1 ración' : '2 raciones'}
               </div>
             </div>
 
-            {/* Cabecera Minimalista Exclusiva para Imprimir en 1 sola hoja A4 */}
-            <div className="hidden print:flex items-baseline justify-between border-b-2 border-neutral-800 pb-1 mb-1 text-[11px] text-neutral-900">
-              <div>
-                <span className="font-extrabold text-xs">MI GORDÓLOGO</span> — <strong>Semana {activeWeek.weekNumber}</strong> (Dieta 1.500 kcal Morales Meseguer)
-              </div>
-              <div className="text-[10px] text-neutral-600 font-medium">
-                {activeProfile.name} · {servings === 1 ? '1 Ración' : '2 Raciones'}
-              </div>
-            </div>
-
-            {/* Tabla Matriz de 7 Días */}
             <div className="overflow-x-auto print:overflow-visible">
-              <table className="w-full text-left text-xs border-collapse print:text-[9.5px] print:leading-tight">
+              <table className="w-full text-left text-xs border-collapse print:text-[8pt] print:leading-snug">
                 <thead>
-                  <tr className="bg-neutral-100 text-neutral-800 font-bold border-b border-neutral-200 text-[11px] print:bg-neutral-200 print:text-[10px]">
-                    <th className="p-2.5 print:p-1 border-r border-neutral-200 w-20 print:w-16">Día</th>
-                    <th className="p-2.5 print:p-1 border-r border-neutral-200 min-w-[130px] print:min-w-0">Desayuno</th>
-                    <th className="p-2.5 print:p-1 border-r border-neutral-200 min-w-[190px] print:min-w-0">Comida</th>
-                    <th className="p-2.5 print:p-1 min-w-[190px] print:min-w-0">Cena</th>
+                  <tr className="bg-emerald-50 text-emerald-950 font-bold border-b border-neutral-200 text-[11px] print:bg-neutral-100 print:text-[8pt]">
+                    <th className="p-2 print:p-0.5 border-r border-neutral-200 w-16 print:w-14">Día</th>
+                    <th className="p-2 print:p-0.5 border-r border-neutral-200">Desayuno</th>
+                    <th className="p-2 print:p-0.5 border-r border-neutral-200">Comida</th>
+                    <th className="p-2 print:p-0.5">Cena</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-200 text-neutral-800 text-xs print:text-[9.5px]">
+                <tbody className="divide-y divide-neutral-200 text-neutral-800">
                   {activeWeek.days.map((day, idx) => {
                     if (day.isFreeDay) {
                       return (
                         <tr key={idx} className="bg-amber-50/80">
-                          <td className="p-2.5 font-bold border-r border-neutral-200 align-top text-amber-950">
-                            <div>{day.dayLabel}</div>
-                            <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-amber-200 text-amber-950 font-bold text-[10px]">
-                              🎉 LIBRE
-                            </span>
+                          <td className="p-2 print:p-0.5 font-bold border-r border-neutral-200 align-top text-amber-950">
+                            {day.dayLabel}
+                            <span className="block text-[10px] print:text-[7pt]">🎉 Libre</span>
                           </td>
-                          <td colSpan={3} className="p-3 text-amber-950 align-middle">
-                            <span className="font-bold text-amber-900">🍕 Día Libre de Dieta:</span> Comida y cena al gusto para disfrutar en familia sin contar calorías.
+                          <td colSpan={3} className="p-2 print:p-0.5 text-amber-900 align-middle text-[11px] print:text-[8pt]">
+                            Día libre — sin menú pautado
                           </td>
                         </tr>
                       );
@@ -589,76 +569,73 @@ export const MenuPage: React.FC = () => {
                     const lunch = day.meals.lunch;
                     const dinner = day.meals.dinner;
                     const breakfast = day.meals.breakfast;
+                    const breakfastShort = breakfast.items
+                      .slice(0, 2)
+                      .map((i) => i.name)
+                      .join(' · ');
 
                     return (
-                      <tr key={idx} className={`print:break-inside-avoid ${idx % 2 === 0 ? 'bg-white' : 'bg-neutral-50/50'}`}>
-                        <td className="p-2.5 print:p-1 font-bold text-neutral-900 border-r border-neutral-200 align-top">
-                          <div className="text-xs print:text-[10px] text-neutral-900 font-extrabold">{day.dayLabel}</div>
+                      <tr key={idx} className={`print:break-inside-avoid ${idx % 2 === 0 ? 'bg-white' : 'bg-neutral-50/60'}`}>
+                        <td className="p-2 print:p-0.5 font-extrabold text-neutral-900 border-r border-neutral-200 align-top text-xs print:text-[8pt]">
+                          {day.dayLabel}
                           <button
                             onClick={() => {
                               setActiveDayIndex(idx);
                               setViewMode('daily');
                             }}
-                            className="mt-1 text-[10px] text-emerald-700 hover:underline font-bold print:hidden block"
+                            className="mt-0.5 text-[10px] text-emerald-700 hover:underline font-bold print:hidden block"
                           >
-                            Ver detalle →
+                            Detalle →
                           </button>
                         </td>
 
-                        {/* Desayuno */}
-                        <td className="p-2.5 print:p-1 border-r border-neutral-200 align-top text-neutral-700 text-[11px] print:text-[9px] leading-snug print:leading-tight">
-                          <div className="space-y-0.5">
+                        <td className="p-2 print:p-0.5 border-r border-neutral-200 align-top text-[11px] print:text-[7.5pt] text-neutral-700">
+                          <span className="print:hidden space-y-0.5 block">
                             {breakfast.items.map((i, iIdx) => (
                               <div key={iIdx}>
-                                • {i.name} {i.quantity ? <span className="text-emerald-800 font-semibold">({formatQuantity(i.quantity)})</span> : ''}
+                                • {i.name}{' '}
+                                {i.quantity ? (
+                                  <span className="text-emerald-800 font-semibold">({formatQuantity(i.quantity)})</span>
+                                ) : (
+                                  ''
+                                )}
                               </div>
                             ))}
-                          </div>
+                          </span>
+                          <span className="hidden print:inline">{breakfastShort}</span>
                         </td>
 
-                        {/* Comida */}
-                        <td className="p-2.5 print:p-1 border-r border-neutral-200 align-top text-neutral-800 text-[11px] print:text-[9px] leading-snug print:leading-tight">
-                          <div className="font-bold text-emerald-950 mb-0.5 flex items-center justify-between print:text-[9.5px]">
-                            <span>{lunch.recipeName || 'Comida'}</span>
-                            {lunch.recipeUrl && (
-                              <a
-                                href={lunch.recipeUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[10px] text-emerald-700 hover:underline font-bold print:hidden shrink-0 ml-1"
-                              >
-                                Cookidoo ↗
-                              </a>
-                            )}
+                        <td className="p-2 print:p-0.5 border-r border-neutral-200 align-top text-[11px] print:text-[8pt]">
+                          <div className="font-bold text-emerald-950 print:text-[8pt]">
+                            {lunch.recipeName || 'Comida'}
                           </div>
-                          <div className="space-y-0.5 text-neutral-700">
+                          <div className="space-y-0.5 text-neutral-700 print:hidden">
                             {lunch.items.map((i, iIdx) => (
                               <div key={iIdx}>
-                                • {i.name} {i.quantity ? <span className="font-semibold text-emerald-800">({formatQuantity(i.quantity)})</span> : ''}
+                                • {i.name}{' '}
+                                {i.quantity ? (
+                                  <span className="font-semibold text-emerald-800">({formatQuantity(i.quantity)})</span>
+                                ) : (
+                                  ''
+                                )}
                               </div>
                             ))}
                           </div>
                         </td>
 
-                        {/* Cena */}
-                        <td className="p-2.5 print:p-1 align-top text-neutral-800 text-[11px] print:text-[9px] leading-snug print:leading-tight">
-                          <div className="font-bold text-emerald-950 mb-0.5 flex items-center justify-between print:text-[9.5px]">
-                            <span>{dinner.recipeName || 'Cena'}</span>
-                            {dinner.recipeUrl && (
-                              <a
-                                href={dinner.recipeUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[10px] text-emerald-700 hover:underline font-bold print:hidden shrink-0 ml-1"
-                              >
-                                Cookidoo ↗
-                              </a>
-                            )}
+                        <td className="p-2 print:p-0.5 align-top text-[11px] print:text-[8pt]">
+                          <div className="font-bold text-emerald-950 print:text-[8pt]">
+                            {dinner.recipeName || 'Cena'}
                           </div>
-                          <div className="space-y-0.5 text-neutral-700">
+                          <div className="space-y-0.5 text-neutral-700 print:hidden">
                             {dinner.items.map((i, iIdx) => (
                               <div key={iIdx}>
-                                • {i.name} {i.quantity ? <span className="font-semibold text-emerald-800">({formatQuantity(i.quantity)})</span> : ''}
+                                • {i.name}{' '}
+                                {i.quantity ? (
+                                  <span className="font-semibold text-emerald-800">({formatQuantity(i.quantity)})</span>
+                                ) : (
+                                  ''
+                                )}
                               </div>
                             ))}
                           </div>

@@ -37,7 +37,7 @@ export function AppLayout() {
         <div className="flex items-center justify-between max-w-md mx-auto">
           <div className="flex items-center space-x-2.5">
             <img
-              src={assetUrl('logo.svg')}
+              src={assetUrl('logo.jpg')}
               alt="Mi Gordólogo"
               className="h-11 w-auto max-w-[48px] object-contain shrink-0 rounded-lg"
               onError={(e) => {

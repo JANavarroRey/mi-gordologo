@@ -82,7 +82,7 @@ export const ProfilePage: React.FC = () => {
       if (perm === 'granted') {
         new Notification('⚖️ Mi Gordólogo', {
           body: `¡Avisos activados! Te recordaremos pesarte cada ${['domingo','lunes','martes','miércoles','jueves','viernes','sábado'][weighInDay]}.`,
-          icon: assetUrl('logo.svg'),
+          icon: assetUrl('logo.jpg'),
         });
       }
     } catch {
