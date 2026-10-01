@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mi Gordólogo">
+  <rect width="512" height="512" rx="96" fill="#16a34a"/>
+  <circle cx="256" cy="208" r="112" fill="#f5d0a9"/>
+  <path d="M154 198c10-90 70-122 204-112 16 42 10 90-6 116-36 16-80 22-122 16-28-4-54-8-76-20z" fill="#6b7280"/>
+  <path d="M166 250c16 74 58 106 90 106s74-32 90-106c-32 22-106 22-180 0z" fill="#9ca3af"/>
+  <circle cx="214" cy="208" r="32" fill="none" stroke="#111827" stroke-width="10"/>
+  <circle cx="298" cy="208" r="32" fill="none" stroke="#111827" stroke-width="10"/>
+  <path d="M246 208h20" stroke="#111827" stroke-width="10"/>
+  <circle cx="214" cy="208" r="9" fill="#111827"/>
+  <circle cx="298" cy="208" r="9" fill="#111827"/>
+  <path d="M224 256c16 16 48 16 64 0" fill="none" stroke="#b45309" stroke-width="8" stroke-linecap="round"/>
+  <path d="M128 448c0-74 54-118 128-118s128 44 128 118" fill="#ecfdf5"/>
+  <ellipse cx="396" cy="400" rx="58" ry="42" fill="#facc15" stroke="#ca8a04" stroke-width="5" transform="rotate(-15 396 400)"/>
+  <path d="M396 358c10-16 26-20 36-16" fill="none" stroke="#65a30d" stroke-width="8" stroke-linecap="round"/>
+</svg>

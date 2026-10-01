@@ -1,0 +1,116 @@
+@import 'tailwindcss';
+
+@theme {
+  /* === PALETA Mi Gordólogo === */
+  /* Primarios - Verde menta (salud, frescura) */
+  --color-primary-50: #f0fdf4;
+  --color-primary-100: #dcfce7;
+  --color-primary-200: #bbf7d0;
+  --color-primary-300: #86efac;
+  --color-primary-400: #4ade80;
+  --color-primary-500: #22c55e;
+  --color-primary-600: #16a34a;
+  --color-primary-700: #15803d;
+  --color-primary-800: #166534;
+  --color-primary-900: #14532d;
+
+  /* Secundarios - Coral/Salmón (calidez, energía, acción) */
+  --color-accent-50: #fff7ed;
+  --color-accent-100: #ffedd5;
+  --color-accent-200: #fed7aa;
+  --color-accent-300: #fdba74;
+  --color-accent-400: #fb923c;
+  --color-accent-500: #f97316;
+  --color-accent-600: #ea580c;
+  --color-accent-700: #c2410c;
+  --color-accent-800: #9a3412;
+  --color-accent-900: #7c2d12;
+
+  /* Neutros */
+  --color-neutral-50: #fafaf9;
+  --color-neutral-100: #f5f5f4;
+  --color-neutral-200: #e7e5e4;
+  --color-neutral-300: #d6d3d1;
+  --color-neutral-400: #a8a29e;
+  --color-neutral-500: #78716c;
+  --color-neutral-600: #57534e;
+  --color-neutral-700: #44403c;
+  --color-neutral-800: #292524;
+  --color-neutral-900: #1c1917;
+
+  /* Semánticos */
+  --color-success: #22c55e;
+  --color-warning: #eab308;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
+
+  /* === TIPOGRAFÍA === */
+  --font-sans: 'Inter', 'system-ui', '-apple-system', 'Segoe UI', sans-serif;
+  --font-display: 'Nunito', 'Inter', sans-serif;
+
+  /* === BORDER RADIUS === */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-full: 9999px;
+}
+
+/* === GLOBAL STYLES (Accesibilidad para personas mayores) === */
+html {
+  font-size: 18px; /* Base más grande para legibilidad */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-neutral-800);
+  background-color: var(--color-neutral-50);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Botones grandes y accesibles */
+button, a {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+/* Focus visible para accesibilidad */
+:focus-visible {
+  outline: 3px solid var(--color-primary-500);
+  outline-offset: 2px;
+}
+
+/* === ESTILOS DE IMPRESIÓN Y EXPORTACIÓN A PDF EN TABLA (1 SOLA HOJA A4) === */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm 6mm;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+    font-size: 8.5pt !important;
+    line-height: 1.25 !important;
+  }
+
+  header, nav, footer, button, .print-hide, .print\:hidden {
+    display: none !important;
+  }
+
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Evitar saltos de página en mitad de filas para meter todo en 1 hoja */
+  tr, td, th {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
