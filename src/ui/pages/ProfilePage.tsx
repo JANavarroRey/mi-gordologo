@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Calendar, Sparkles, Heart, Bell, Share2, BookOpen, RefreshCw, Link as LinkIcon, UserPlus, CheckCircle2, ShieldCheck, Cloud } from 'lucide-react';
+import { Users, Calendar, Sparkles, Heart, Bell, Share2, Link as LinkIcon, UserPlus, CheckCircle2, ShieldCheck, Cloud, ChevronDown } from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
 import { cloudSyncService } from '@/domain/services/cloudSyncService';
 import { UserSelectionModal } from '@/ui/components/onboarding/UserSelectionModal';
@@ -180,66 +180,48 @@ export const ProfilePage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      {/* Tarjeta del Usuario Activo */}
-      <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200">
-        <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 font-bold text-lg flex items-center justify-center shadow-xs">
-              {activeUser.name.charAt(0)}
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h2 className="text-lg font-bold font-display text-neutral-900 leading-tight">
-                  {activeUser.name}
-                </h2>
-                {activeUser.id === 'maria_ignacia' && (
-                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                    Mamá
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-neutral-500 mt-0.5">
-                {activeUser.age} años · {activeUser.height} cm · Objetivo: {activeUser.targetCalories} kcal
-              </p>
-            </div>
+      {/* Tarjeta del Usuario Activo — compacta */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-700 to-teal-700 text-white p-5 shadow-sm">
+        <div className="absolute -right-6 -top-6 w-28 h-28 rounded-full bg-white/10" />
+        <div className="absolute -right-2 bottom-2 w-16 h-16 rounded-full bg-white/5" />
+        <div className="relative flex items-center gap-3">
+          <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm font-bold text-2xl flex items-center justify-center shrink-0">
+            {activeUser.name.charAt(0)}
           </div>
-
-          <div className="flex items-center space-x-1.5">
-            <button
-              onClick={() => setShowWizardModal(true)}
-              title="Añadir otro usuario con cuestionario"
-              className="p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition-colors"
-            >
-              <UserPlus className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setShowUserModal(true)}
-              className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Cambiar</span>
-            </button>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-xl font-bold font-display leading-tight truncate">
+              {activeUser.name}
+            </h2>
+            <p className="text-sm text-emerald-100 mt-0.5">
+              {activeUser.targetCalories} kcal · {activeUser.height} cm
+            </p>
           </div>
         </div>
-
-        {/* Guía rápida de la app */}
-        <div className="mt-4 pt-1">
+        <div className="relative mt-4 grid grid-cols-2 gap-2">
           <button
-            onClick={() => setShowTutorialModal(true)}
-            className="w-full flex items-center justify-between p-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200/70 text-emerald-900 transition-colors"
+            type="button"
+            onClick={() => setShowUserModal(true)}
+            className="flex items-center justify-center gap-1.5 py-2.5 rounded-2xl bg-white text-emerald-800 text-xs font-bold"
           >
-            <div className="flex items-center space-x-2.5">
-              <span className="p-1.5 bg-emerald-600 text-white rounded-xl">
-                <BookOpen className="w-4 h-4" />
-              </span>
-              <div className="text-left">
-                <p className="font-bold text-xs">¿Dudas de cómo usar la app?</p>
-                <p className="text-[11px] text-emerald-700">Ver la Guía Fácil paso a paso</p>
-              </div>
-            </div>
-            <span className="text-xs font-bold text-emerald-700">Abrir ↗</span>
+            <Users className="w-3.5 h-3.5" />
+            Cambiar perfil
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowWizardModal(true)}
+            className="flex items-center justify-center gap-1.5 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold border border-white/25"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            Nuevo perfil
           </button>
         </div>
+        <button
+          type="button"
+          onClick={() => setShowTutorialModal(true)}
+          className="relative mt-3 w-full text-center text-[11px] font-semibold text-emerald-100 hover:text-white underline-offset-2 hover:underline"
+        >
+          Ver guía rápida de la app
+        </button>
       </div>
 
       {/* Sincronización y Compartición de Menú */}
@@ -507,103 +489,83 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Clave Gemini API — se guarda solo en este dispositivo (nunca en GitHub) */}
-      <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-2.5">
-        <div className="flex items-center space-x-2">
-          <Sparkles className="w-4 h-4 text-emerald-600" />
-          <h3 className="font-bold text-sm text-neutral-800">Clave de IA (Gemini) — recomendaciones</h3>
-        </div>
-        <p className="text-[11px] text-neutral-500 leading-relaxed">
-          Pega aquí tu clave gratuita de{' '}
-          <a
-            href="https://aistudio.google.com/apikey"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-emerald-700 font-bold underline"
-          >
-            Google AI Studio
-          </a>
-          . Se guarda solo en este móvil (localStorage), no en el repositorio público. Sin clave, El Gordólogo usa el motor offline del hospital.
-        </p>
-        <form onSubmit={handleSaveGeminiKey} className="flex space-x-2">
-          <input
-            type="password"
-            placeholder="AIza… (pegar clave)"
-            value={geminiKey}
-            onChange={(e) => setGeminiKey(e.target.value)}
-            autoComplete="off"
-            className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 font-mono"
-          />
-          <button
-            type="submit"
-            className="px-3.5 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-900 text-white font-bold text-xs"
-          >
-            Guardar
-          </button>
-        </form>
-        {keySavedFeedback && (
-          <p className="text-[11px] text-emerald-700 font-semibold">✓ Clave guardada en este dispositivo.</p>
-        )}
-        {geminiKey.trim() ? (
-          <p className="text-[10px] text-emerald-800">Estado: clave presente — el chat y “Ajustar” usarán Gemini.</p>
-        ) : (
-          <p className="text-[10px] text-amber-800">Estado: sin clave — recomendaciones offline (más genéricas).</p>
-        )}
-      </div>
+      {/* Ajustes técnicos: colapsados (se configurarán en el siguiente paso) */}
+      <details className="bg-white rounded-3xl shadow-sm border border-neutral-200 group">
+        <summary className="cursor-pointer list-none flex items-center justify-between p-4 font-bold text-sm text-neutral-800">
+          <span className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-emerald-600" />
+            Ajustes avanzados
+            <span className="text-[10px] font-semibold text-neutral-400">(IA · nube)</span>
+          </span>
+          <ChevronDown className="w-4 h-4 text-neutral-400 group-open:rotate-180 transition-transform" />
+        </summary>
+        <div className="px-4 pb-4 space-y-4 border-t border-neutral-100 pt-3">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-neutral-700">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+              Clave IA (Gemini)
+            </div>
+            <form onSubmit={handleSaveGeminiKey} className="flex gap-2">
+              <input
+                type="password"
+                placeholder="Pegar clave…"
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+                autoComplete="off"
+                className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 font-mono min-w-0"
+              />
+              <button type="submit" className="px-3 py-2 rounded-xl bg-neutral-800 text-white font-bold text-xs shrink-0">
+                Guardar
+              </button>
+            </form>
+            {keySavedFeedback && (
+              <p className="text-[11px] text-emerald-700 font-semibold">✓ Guardada en este móvil.</p>
+            )}
+          </div>
 
-      {/* Nube familiar gratis (Supabase Free) */}
-      <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-2.5">
-        <div className="flex items-center space-x-2">
-          <Cloud className="w-4 h-4 text-sky-600" />
-          <h3 className="font-bold text-sm text-neutral-800">Guardar cambios en la nube (gratis)</h3>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-neutral-700">
+              <Cloud className="w-3.5 h-3.5 text-sky-600" />
+              Copia en la nube
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                placeholder="Clave familiar"
+                value={familyKey}
+                onChange={(e) => setFamilyKey(e.target.value)}
+                className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 font-mono min-w-0"
+              />
+              <button
+                type="button"
+                onClick={handleSaveFamilyKey}
+                className="px-3 py-2 rounded-xl bg-neutral-100 text-neutral-800 font-bold text-xs shrink-0"
+              >
+                OK
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={cloudBusy}
+                onClick={handleCloudPush}
+                className="p-2 rounded-xl bg-sky-700 disabled:opacity-50 text-white text-xs font-bold"
+              >
+                Subir
+              </button>
+              <button
+                type="button"
+                disabled={cloudBusy}
+                onClick={handleCloudPull}
+                className="p-2 rounded-xl border border-sky-200 text-sky-900 text-xs font-bold"
+              >
+                Restaurar
+              </button>
+            </div>
+            {cloudMsg && <p className="text-[11px] text-neutral-600">{cloudMsg}</p>}
+          </div>
         </div>
-        <p className="text-[11px] text-neutral-500 leading-relaxed">
-          Los menús se guardan siempre en el móvil. Para compartirlos entre dispositivos (y no perder ajustes), usa Supabase Free:
-          ejecuta <code className="text-[10px] bg-neutral-100 px-1 rounded">supabase/schema.sql</code> en tu proyecto y configura
-          <code className="text-[10px] bg-neutral-100 px-1 rounded ml-0.5">VITE_SUPABASE_URL</code> +
-          <code className="text-[10px] bg-neutral-100 px-1 rounded ml-0.5">VITE_SUPABASE_ANON_KEY</code>.
-        </p>
-        <p className="text-[11px] font-semibold text-neutral-700">
-          Backend: {cloudSyncService.isConfigured() ? '✓ Supabase conectado' : '○ Pendiente de configurar en el build'}
-        </p>
-        <div className="flex space-x-2">
-          <input
-            type="password"
-            placeholder="Clave familiar (mín. 6 caracteres)"
-            value={familyKey}
-            onChange={(e) => setFamilyKey(e.target.value)}
-            className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 font-mono"
-          />
-          <button
-            type="button"
-            onClick={handleSaveFamilyKey}
-            className="px-3 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-xs"
-          >
-            Guardar
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            disabled={cloudBusy}
-            onClick={handleCloudPush}
-            className="p-2.5 rounded-xl bg-sky-700 hover:bg-sky-800 disabled:opacity-50 text-white text-xs font-bold"
-          >
-            Subir a la nube
-          </button>
-          <button
-            type="button"
-            disabled={cloudBusy}
-            onClick={handleCloudPull}
-            className="p-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-900 text-xs font-bold"
-          >
-            Restaurar desde nube
-          </button>
-        </div>
-        {cloudMsg && (
-          <p className="text-[11px] text-neutral-700 leading-relaxed">{cloudMsg}</p>
-        )}
-      </div>
+      </details>
 
       {/* Modales */}
       <UserSelectionModal

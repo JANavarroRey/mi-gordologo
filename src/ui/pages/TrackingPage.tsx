@@ -213,63 +213,67 @@ export const TrackingPage: React.FC = () => {
             <span className="text-xs text-neutral-400">Paso a paso</span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
+          <div className="space-y-3">
+            <div className="min-w-0">
               <label className="block text-xs font-semibold text-neutral-600 mb-1">Fecha</label>
               <input
                 type="date"
                 required
                 value={formDate}
                 onChange={(e) => setFormDate(e.target.value)}
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200 focus:ring-2 focus:ring-primary-500"
+                className="w-full min-w-0 max-w-full box-border text-sm p-3 rounded-xl border border-neutral-200 focus:ring-2 focus:ring-primary-500"
               />
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="block text-xs font-semibold text-neutral-600 mb-1">Peso (kg) *</label>
               <input
                 type="number"
                 step="0.1"
                 required
+                inputMode="decimal"
                 placeholder="Ej: 77.5"
                 value={formWeight}
                 onChange={(e) => setFormWeight(e.target.value)}
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200 focus:ring-2 focus:ring-primary-500 font-bold"
+                className="w-full min-w-0 max-w-full box-border text-sm p-3 rounded-xl border border-neutral-200 focus:ring-2 focus:ring-primary-500 font-bold"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            <div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="min-w-0">
               <label className="block text-[11px] font-semibold text-neutral-600 mb-1">% Grasa</label>
               <input
                 type="number"
                 step="0.1"
+                inputMode="decimal"
                 placeholder="42.5"
                 value={formFatPercent}
                 onChange={(e) => setFormFatPercent(e.target.value)}
-                className="w-full text-xs p-2 rounded-xl border border-neutral-200"
+                className="w-full min-w-0 max-w-full box-border text-sm p-3 rounded-xl border border-neutral-200"
               />
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="block text-[11px] font-semibold text-neutral-600 mb-1">Músculo (kg)</label>
               <input
                 type="number"
                 step="0.1"
+                inputMode="decimal"
                 placeholder="25.2"
                 value={formMuscle}
                 onChange={(e) => setFormMuscle(e.target.value)}
-                className="w-full text-xs p-2 rounded-xl border border-neutral-200"
+                className="w-full min-w-0 max-w-full box-border text-sm p-3 rounded-xl border border-neutral-200"
               />
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="block text-[11px] font-semibold text-neutral-600 mb-1">% Agua</label>
               <input
                 type="number"
                 step="0.1"
+                inputMode="decimal"
                 placeholder="40.0"
                 value={formWater}
                 onChange={(e) => setFormWater(e.target.value)}
-                className="w-full text-xs p-2 rounded-xl border border-neutral-200"
+                className="w-full min-w-0 max-w-full box-border text-sm p-3 rounded-xl border border-neutral-200"
               />
             </div>
           </div>

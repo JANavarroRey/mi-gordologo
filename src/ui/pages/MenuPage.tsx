@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ExternalLink, Sparkles, Share2, Printer, Check, X, RefreshCw, Calendar, Table, ChevronRight, Mail } from 'lucide-react';
+import { ExternalLink, Sparkles, Share2, ImageIcon, Check, X, RefreshCw, Calendar, Table, ChevronRight, Mail } from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
 import { geminiService } from '@/domain/services/geminiService';
 import { MEAL_LABELS } from '@/domain/models/types';
@@ -78,6 +78,7 @@ export const MenuPage: React.FC = () => {
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
+  const [sharingImage, setSharingImage] = useState(false);
 
   useEffect(() => {
     const handleSync = () => {
@@ -159,107 +160,22 @@ export const MenuPage: React.FC = () => {
     setIsAiLoading(false);
   };
 
-  const handlePrint = () => {
-    setViewMode('table');
-    // Pequeña espera para montar la tabla y forzar orientación horizontal en el diálogo
-    window.setTimeout(() => {
-      document.body.classList.add('printing-menu');
-      window.print();
-      window.setTimeout(() => document.body.classList.remove('printing-menu'), 500);
-    }, 200);
-  };
-
-  /** Genera PDF real (jspdf) y lo comparte en Android vía Web Share API. */
-  const handleExportPdf = async () => {
+  /** Infografía visual PNG (sustituye al PDF) — se comparte o descarga. */
+  const handleShareInfographic = async () => {
+    setSharingImage(true);
     try {
-      const { jsPDF } = await import('jspdf');
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const margin = 8;
-      const pageW = doc.internal.pageSize.getWidth();
-      const pageH = doc.internal.pageSize.getHeight();
-      const colW = (pageW - margin * 2) / 4;
-      let y = margin;
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.text(`Mi Gordólogo — Semana ${activeWeek.weekNumber}`, margin, y);
-      y += 5;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.text(
-        `${activeProfile.name} · ${servings === 1 ? '1 ración' : '2 raciones'} · 1.500 kcal`,
-        margin,
-        y
-      );
-      y += 6;
-
-      const headers = ['Día', 'Desayuno', 'Comida', 'Cena'];
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      headers.forEach((h, i) => doc.text(h, margin + i * colW + 1, y));
-      y += 2;
-      doc.setDrawColor(180);
-      doc.line(margin, y, pageW - margin, y);
-      y += 4;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-
-      const wrap = (text: string, maxW: number): string[] => doc.splitTextToSize(text, maxW - 2) as string[];
-
-      for (const d of activeWeek.days) {
-        const dayLabel = d.isFreeDay ? `${d.dayLabel} (Libre)` : d.dayLabel;
-        const breakfast = d.isFreeDay
-          ? '—'
-          : d.meals.breakfast.items.map((i) => i.name).join(', ') || '—';
-        const lunch = d.isFreeDay
-          ? 'Día libre'
-          : d.meals.lunch.recipeName || d.meals.lunch.items.map((i) => i.name).join(', ') || '—';
-        const dinner = d.isFreeDay
-          ? 'Día libre'
-          : d.meals.dinner.recipeName || d.meals.dinner.items.map((i) => i.name).join(', ') || '—';
-
-        const cells = [dayLabel, breakfast, lunch, dinner].map((t) => wrap(t, colW));
-        const rowH = Math.max(...cells.map((c) => c.length)) * 3.2 + 2;
-        if (y + rowH > pageH - margin) {
-          doc.addPage();
-          y = margin;
-        }
-        cells.forEach((lines, i) => {
-          doc.text(lines, margin + i * colW + 1, y);
-        });
-        y += rowH;
-        doc.setDrawColor(230);
-        doc.line(margin, y - 1, pageW - margin, y - 1);
-      }
-
-      const fileName = `menu-semana-${activeWeek.weekNumber}-gordologo.pdf`;
-      const blob = doc.output('blob');
-      const file = new File([blob], fileName, { type: 'application/pdf' });
-
-      const nav = navigator as Navigator & {
-        canShare?: (data?: ShareData) => boolean;
-        share?: (data?: ShareData) => Promise<void>;
-      };
-
-      if (nav.share && (!nav.canShare || nav.canShare({ files: [file] }))) {
-        try {
-          await nav.share({
-            title: `Menú semana ${activeWeek.weekNumber}`,
-            text: 'Menú Mi Gordólogo',
-            files: [file],
-          });
-          return;
-        } catch (err) {
-          // Usuario canceló o share falló → descarga
-          if ((err as Error)?.name === 'AbortError') return;
-        }
-      }
-
-      doc.save(fileName);
+      const { shareWeekMenuInfographic } = await import('@/domain/services/menuInfographicService');
+      await shareWeekMenuInfographic({
+        week: activeWeek,
+        profileName: activeProfile.name,
+        servings,
+        kcal: 1500,
+      });
     } catch (err) {
       console.error(err);
-      // Fallback: diálogo de impresión del navegador
-      handlePrint();
+      alert('No se pudo generar la imagen del menú. Prueba de nuevo.');
+    } finally {
+      setSharingImage(false);
     }
   };
 
@@ -481,11 +397,13 @@ export const MenuPage: React.FC = () => {
                 <Mail className="w-4 h-4" />
               </button>
               <button
-                onClick={handleExportPdf}
-                title="Descargar o compartir PDF"
-                className="p-2.5 min-w-[44px] min-h-[44px] rounded-xl bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-colors flex items-center justify-center"
+                type="button"
+                onClick={handleShareInfographic}
+                disabled={sharingImage}
+                title="Compartir menú semanal como imagen"
+                className="p-2.5 min-w-[44px] min-h-[44px] rounded-xl bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-60 transition-colors flex items-center justify-center"
               >
-                <Printer className="w-4 h-4" />
+                <ImageIcon className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -614,12 +532,13 @@ export const MenuPage: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={handleExportPdf}
-                title="Descargar o compartir PDF"
-                className="px-2.5 py-1.5 rounded-xl bg-neutral-800 text-white hover:bg-neutral-900 text-xs font-bold flex items-center space-x-1 transition-colors"
+                onClick={handleShareInfographic}
+                disabled={sharingImage}
+                title="Compartir infografía del menú"
+                className="px-2.5 py-1.5 rounded-xl bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-60 text-xs font-bold flex items-center space-x-1 transition-colors"
               >
-                <Printer className="w-3.5 h-3.5" />
-                <span>PDF</span>
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span>{sharingImage ? '…' : 'Imagen'}</span>
               </button>
             </div>
           </div>

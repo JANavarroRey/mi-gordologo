@@ -276,7 +276,7 @@ export const storageService = {
       }));
 
     const storedVersion = localStorage.getItem(STORAGE_KEYS.SEED_VERSION);
-    const CURRENT_VERSION = 'v2026_nutri_enrich_v4';
+    const CURRENT_VERSION = 'v2026_nutri_enrich_v5';
 
     const raw = localStorage.getItem(`${STORAGE_KEYS.MENUS}_${menuOwnerId}`);
     if (!raw || storedVersion !== CURRENT_VERSION) {

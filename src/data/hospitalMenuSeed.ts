@@ -778,6 +778,29 @@ const DINNER_CATALOG: MenuDef[] = [
     ],
     dessertType: 'integrated',
   },
+  {
+    recipeName: 'Pimientos Asados con Sardinillas',
+    cookidooQuery: 'Pimientos asados',
+    items: [
+      item('Ensalada de pimientos asados', '150g'),
+      item('Sardinillas al natural bien escurridas', '1 lata pequeña'),
+      item('Yogur desnatado', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Tomate, Espárragos, Pavo y Queso Fresco',
+    cookidooQuery: 'Espárragos tomate',
+    items: [
+      item('Tomates partidos con espárragos', '200g'),
+      item('Pechuga de pavo', '30g'),
+      item('Queso fresco desnatado', '30g'),
+      item('Yogur desnatado', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
 ];
 
 // ============================================================================
@@ -866,12 +889,12 @@ const ROTATION_TABLE: [number, number][][] = [
   [[21, 21], [22, 22], [23, 23], [24, 24], [25, 25], [26, 26], [27, 27]],
   // Sem 5 — mezcla
   [[28, 28], [29, 29], [21, 22], [10, 21], [12, 24], [30, 25], [14, 26]],
-  // Sem 6
-  [[22, 27], [24, 28], [26, 29], [28, 21], [30, 23], [23, 25], [25, 27]],
+  // Sem 6 — más variedad nutricionista (escalivada, gambas, zarangollo…)
+  [[22, 27], [24, 28], [26, 29], [28, 21], [30, 23], [23, 31], [25, 32]],
   // Sem 7
-  [[27, 24], [29, 26], [21, 28], [23, 29], [25, 22], [22, 30], [24, 21]],
+  [[27, 24], [29, 26], [21, 28], [23, 29], [25, 22], [22, 30], [24, 31]],
   // Sem 8
-  [[26, 23], [28, 25], [30, 27], [21, 29], [23, 21], [29, 24], [27, 26]],
+  [[26, 32], [28, 25], [30, 27], [21, 29], [23, 21], [29, 24], [27, 26]],
 ];
 
 const STANDARD_DESSERT = 'Fruta fresca (Grupo A 300g / B 200g / C 160g / D 100g) ó 2 yogures desnatados sin azúcar';
