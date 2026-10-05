@@ -70,8 +70,10 @@ export const WeeklyCheckInModal: React.FC<WeeklyCheckInModalProps> = ({
       consejo = '🍲 Para la semana que entra: Recuerda que puedes usar el botón "Ajustar" para cambiar platos que no te apetezcan por pollo, merluza o ensalada murciana en 1 segundo.';
     } else if (cravings.includes('picoteado')) {
       consejo = '🍎 Truco del Gordólogo contra el picoteo: Ten siempre a mano palitos de pepino, gelatina 0% o un yogur desnatado. Y no olvides la recena antes de dormir.';
-    } else if (activity.includes('No he podido')) {
-      consejo = '🚶‍♀️ Reto suave: Intenta dar dos paseos de 20 minutos por la mañana al sol murciano. Es mano de santo para activar la circulación y el gasto calórico.';
+    } else if (activity.includes('casi no') || activity.includes('No he podido')) {
+      consejo = '🚶 Reto suave: 2 paseos cortos + 1 sesión de fuerza suave en casa (sentadillas al respaldo de una silla). Si te va la bici, 20–30 min también cuenta.';
+    } else if (activity.includes('Fuerza') || activity.includes('bici')) {
+      consejo = '💪🚴 Buen combo. Mantén esos 2+2 y cuida la recuperación: proteína en comida/cena y 1,5 L de agua.';
     } else {
       consejo = '🌟 Vas por el camino excelente. Sigue con el menú pautado de la semana y disfruta de tus comidas sin prisa (mínimo 20 minutos por ingesta).';
     }
@@ -255,17 +257,20 @@ export const WeeklyCheckInModal: React.FC<WeeklyCheckInModalProps> = ({
               <div className="flex items-center space-x-2 text-amber-800">
                 <Footprints className="w-5 h-5" />
                 <h4 className="font-bold text-sm text-neutral-900">
-                  ¿Has salido a caminar o hacer movimiento esta semana?
+                  ¿Qué actividad física has hecho esta semana?
                 </h4>
               </div>
               <p className="text-xs text-neutral-500">
-                Caminar 30-40 minutos ayuda a preservar la masa muscular:
+                Elige la opción que más se acerque (fuerza, bici, paseo u otra):
               </p>
               <div className="space-y-2 pt-1">
                 {[
-                  { id: 'active', label: '🚶‍♀️ Sí, he caminado activamente 3 o más días' },
-                  { id: 'some', label: '🏃 Algo de paseo ligero 1 o 2 días' },
-                  { id: 'none', label: '🛋️ No he podido salir a andar esta semana' },
+                  { id: 'strength_bike', label: '💪🚴 Fuerza 2 días + bici 2 días (o similar combinado)' },
+                  { id: 'walk', label: '🚶 He caminado activamente 3 o más días' },
+                  { id: 'mixed', label: '🏃 Mezcla: paseo + algo de fuerza, bici o natación' },
+                  { id: 'light', label: '🪴 Movimiento suave 1–2 días (paseo corto, estiramientos)' },
+                  { id: 'none', label: '🛋️ Esta semana casi no he podido moverme' },
+                  { id: 'other', label: '✍️ Otro (yoga, pilates, natación, baile…)' },
                 ].map((opt) => (
                   <button
                     key={opt.id}
@@ -281,7 +286,7 @@ export const WeeklyCheckInModal: React.FC<WeeklyCheckInModalProps> = ({
                     }`}
                   >
                     <span>{opt.label}</span>
-                    <ChevronRight className="w-4 h-4 text-neutral-400" />
+                    <ChevronRight className="w-4 h-4 text-neutral-400 shrink-0" />
                   </button>
                 ))}
               </div>

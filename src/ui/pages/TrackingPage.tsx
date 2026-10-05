@@ -199,50 +199,7 @@ export const TrackingPage: React.FC = () => {
         )}
       </div>
 
-      {/* Tarjeta de Salud: IMC Real y Explicación Clínica */}
-      {latest && latest.weight && (
-        (() => {
-          const heightM = activeUser.height / 100;
-          const bmi = latest.bmi || parseFloat((latest.weight / (heightM * heightM)).toFixed(1));
-          const category = getBmiCategory(bmi);
-          const targetWeightNormo = Math.round(24.9 * heightM * heightM);
-          const diffToNormo = Math.round(latest.weight - targetWeightNormo);
-
-          return (
-            <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <HeartPulse className="w-4 h-4 text-emerald-600" />
-                  <h3 className="font-bold text-xs text-neutral-800 uppercase tracking-wider">
-                    Índice de Masa Corporal (IMC)
-                  </h3>
-                </div>
-                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${category.color}`}>
-                  {category.label}
-                </span>
-              </div>
-
-              <div className="flex items-baseline space-x-2">
-                <span className="text-3xl font-extrabold text-neutral-900 font-display">
-                  {bmi}
-                </span>
-                <span className="text-xs text-neutral-500 font-medium">kg/m²</span>
-              </div>
-
-              <p className="text-xs text-neutral-600 leading-relaxed">
-                {category.description}
-                {diffToNormo > 0 && (
-                  <span className="block mt-1 font-medium text-emerald-800">
-                    💡 Referencia: Con tu estatura de {activeUser.height} cm, un peso de ~{targetWeightNormo} kg se situaría en rango normal (IMC 24,9).
-                  </span>
-                )}
-              </p>
-            </div>
-          );
-        })()
-      )}
-
-      {/* Formulario Añadir Registro */}
+      {/* Formulario Añadir Registro (arriba, antes del IMC) */}
       {showAddForm && (
         <form
           onSubmit={handleAddMeasurement}
@@ -392,36 +349,85 @@ export const TrackingPage: React.FC = () => {
         </form>
       )}
 
-      {/* Gráfico de Evolución del Peso */}
+      {/* Tarjeta de Salud: IMC (debajo de meter peso) */}
+      {latest && latest.weight && (
+        (() => {
+          const heightM = activeUser.height / 100;
+          const bmi = latest.bmi || parseFloat((latest.weight / (heightM * heightM)).toFixed(1));
+          const category = getBmiCategory(bmi);
+          const targetWeightNormo = Math.round(24.9 * heightM * heightM);
+          const diffToNormo = Math.round(latest.weight - targetWeightNormo);
+
+          return (
+            <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <HeartPulse className="w-4 h-4 text-emerald-600" />
+                  <h3 className="font-bold text-xs text-neutral-800 uppercase tracking-wider">
+                    Índice de Masa Corporal (IMC)
+                  </h3>
+                </div>
+                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${category.color}`}>
+                  {category.label}
+                </span>
+              </div>
+
+              <div className="flex items-baseline space-x-2">
+                <span className="text-3xl font-extrabold text-neutral-900 font-display">
+                  {bmi}
+                </span>
+                <span className="text-xs text-neutral-500 font-medium">kg/m²</span>
+              </div>
+
+              <p className="text-xs text-neutral-600 leading-relaxed">
+                {category.description}
+                {diffToNormo > 0 && (
+                  <span className="block mt-1 font-medium text-emerald-800">
+                    💡 Referencia: Con tu estatura de {activeUser.height} cm, un peso de ~{targetWeightNormo} kg se situaría en rango normal (IMC 24,9).
+                  </span>
+                )}
+              </p>
+            </div>
+          );
+        })()
+      )}
+
+      {/* Gráfico 1: solo peso (escala en kg) */}
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-neutral-200">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-sm text-neutral-800 flex items-center">
             <TrendingDown className="w-4 h-4 mr-1.5 text-primary-600" />
-            Evolución clínica
+            Evolución del peso
           </h3>
           {weightDiff < 0 ? (
             <span className="text-xs text-emerald-800 font-semibold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center space-x-1">
               <TrendingDown className="w-3 h-3 text-emerald-600" />
-              <span>Bajada de {Math.abs(weightDiff)} kg 📉</span>
+              <span>−{Math.abs(weightDiff)} kg</span>
             </span>
           ) : weightDiff > 0 ? (
             <span className="text-xs text-amber-800 font-semibold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md flex items-center space-x-1">
               <TrendingUp className="w-3 h-3 text-amber-600" />
-              <span>Variación de +{weightDiff} kg 📈</span>
+              <span>+{weightDiff} kg</span>
             </span>
           ) : (
             <span className="text-xs text-neutral-600 font-semibold bg-neutral-100 px-2 py-0.5 rounded-md">
-              Peso estabilizado ⚖️
+              Estable
             </span>
           )}
         </div>
 
         <div className="h-44 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
+            <LineChart data={chartData} margin={{ top: 5, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
               <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#94a3b8" />
-              <YAxis domain={['dataMin - 1', 'dataMax + 1']} tick={{ fontSize: 11 }} stroke="#94a3b8" />
+              <YAxis
+                domain={[(dataMin: number) => Math.floor(dataMin - 1), (dataMax: number) => Math.ceil(dataMax + 1)]}
+                tick={{ fontSize: 11 }}
+                stroke="#94a3b8"
+                unit=" kg"
+                width={48}
+              />
               <Tooltip
                 contentStyle={{
                   backgroundColor: '#ffffff',
@@ -429,6 +435,7 @@ export const TrackingPage: React.FC = () => {
                   border: '1px solid #e2e8f0',
                   fontSize: '12px',
                 }}
+                formatter={(value) => [`${value} kg`, 'Peso']}
               />
               <Line
                 type="monotone"
@@ -439,33 +446,77 @@ export const TrackingPage: React.FC = () => {
                 dot={{ r: 5, fill: '#16a34a', stroke: '#ffffff', strokeWidth: 2 }}
                 activeDot={{ r: 7 }}
               />
-              <Line
-                type="monotone"
-                dataKey="grasa"
-                name="% Grasa"
-                stroke="#f59e0b"
-                strokeWidth={2}
-                connectNulls
-                dot={{ r: 3, fill: '#f59e0b' }}
-              />
-              <Line
-                type="monotone"
-                dataKey="musculo"
-                name="Músculo (kg)"
-                stroke="#0ea5e9"
-                strokeWidth={2}
-                connectNulls
-                dot={{ r: 3, fill: '#0ea5e9' }}
-              />
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <div className="flex justify-center gap-3 mt-1 text-[10px] text-neutral-500">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-600" /> Peso</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> % Grasa</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sky-500" /> Músculo</span>
-        </div>
       </div>
+
+      {/* Gráfico 2: composición (% grasa y músculo) con escalas propias */}
+      {chartData.some((d) => d.grasa != null || d.musculo != null) && (
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-neutral-200">
+          <h3 className="font-bold text-sm text-neutral-800 mb-3 flex items-center">
+            <TrendingDown className="w-4 h-4 mr-1.5 text-amber-600" />
+            Composición corporal
+          </h3>
+          <div className="h-44 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 5, right: 12, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                <YAxis
+                  yAxisId="pct"
+                  domain={[0, (dataMax: number) => Math.max(50, Math.ceil((dataMax || 40) + 5))]}
+                  tick={{ fontSize: 10 }}
+                  stroke="#f59e0b"
+                  unit="%"
+                  width={40}
+                />
+                <YAxis
+                  yAxisId="kg"
+                  orientation="right"
+                  domain={[(dataMin: number) => Math.max(0, Math.floor((dataMin || 20) - 2)), (dataMax: number) => Math.ceil((dataMax || 30) + 2)]}
+                  tick={{ fontSize: 10 }}
+                  stroke="#0ea5e9"
+                  unit=" kg"
+                  width={44}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#ffffff',
+                    borderRadius: '12px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '12px',
+                  }}
+                />
+                <Line
+                  yAxisId="pct"
+                  type="monotone"
+                  dataKey="grasa"
+                  name="% Grasa"
+                  stroke="#f59e0b"
+                  strokeWidth={2}
+                  connectNulls
+                  dot={{ r: 3, fill: '#f59e0b' }}
+                />
+                <Line
+                  yAxisId="kg"
+                  type="monotone"
+                  dataKey="musculo"
+                  name="Músculo (kg)"
+                  stroke="#0ea5e9"
+                  strokeWidth={2}
+                  connectNulls
+                  dot={{ r: 3, fill: '#0ea5e9' }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex justify-center gap-4 mt-1 text-[10px] text-neutral-500">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> % Grasa (eje izq.)</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sky-500" /> Músculo kg (eje der.)</span>
+          </div>
+        </div>
+      )}
 
       {/* Dictamen Clínico Dinámico del Gordólogo */}
       <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-sm space-y-3">

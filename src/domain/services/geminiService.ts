@@ -83,8 +83,14 @@ Por favor, devuelve un JSON válido con el siguiente formato exacto (sin markdow
         return {
           message: rawText || 'He procesado tu petición.',
         };
-      } catch {
-        // Silencioso: cae al motor offline
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // Si hay clave pero falla (cuota, red, modelo), avisar y usar offline
+        const offline = this.fallbackAdjustment(mealType, currentMeal, userPrompt);
+        return {
+          ...offline,
+          message: `⚠️ Gemini no respondió (${msg.slice(0, 80)}). Usé el motor del hospital: ${offline.message}`,
+        };
       }
     }
 
@@ -111,8 +117,9 @@ Si implica alcohol, azúcar, miel o cerveza sin alcohol: prohíbelo con firmeza 
         });
         const text = (response.text || '').trim();
         if (text) return text;
-      } catch {
-        // fallback offline
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return `⚠️ No pude hablar con Gemini (${msg.slice(0, 100)}).\n\n${this.fallbackNutritionAnswer(question)}`;
       }
     }
     return this.fallbackNutritionAnswer(question);

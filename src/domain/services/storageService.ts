@@ -234,11 +234,23 @@ export const storageService = {
     localStorage.setItem(`${STORAGE_KEYS.SERVINGS}_${targetUser}`, count.toString());
   },
 
-  // Día libre configurable (0=Lunes, 5=Sábado, 6=Domingo)
+  // Día libre: desactivado por defecto. Si se habilita, se elige el día (0=Lun…6=Dom).
+  isFreeDayEnabled(userId?: string): boolean {
+    const targetUser = userId || this.getActiveUserId();
+    return localStorage.getItem(`${STORAGE_KEYS.FREE_DAY}_${targetUser}_enabled`) === '1';
+  },
+
+  setFreeDayEnabled(enabled: boolean, userId?: string): void {
+    const targetUser = userId || this.getActiveUserId();
+    localStorage.setItem(`${STORAGE_KEYS.FREE_DAY}_${targetUser}_enabled`, enabled ? '1' : '0');
+  },
+
   getFreeDay(userId?: string): number {
     const targetUser = userId || this.getActiveUserId();
     const raw = localStorage.getItem(`${STORAGE_KEYS.FREE_DAY}_${targetUser}`);
-    return raw ? parseInt(raw, 10) : 5; // Por defecto Sábado (índice 5)
+    if (raw === null || raw === undefined || raw === '') return 5; // Preferencia al habilitar: sábado
+    const parsed = parseInt(raw, 10);
+    return Number.isNaN(parsed) ? 5 : parsed;
   },
 
   setFreeDay(dayIndex: number, userId?: string): void {
@@ -251,6 +263,7 @@ export const storageService = {
     const targetUser = userId || this.getActiveUserId();
     const profile = this.getProfileById(targetUser);
     const menuOwnerId = profile?.linkedMenuUserId || targetUser;
+    const freeEnabled = this.isFreeDayEnabled(targetUser);
     const freeDay = this.getFreeDay(targetUser);
 
     const applyFreeDay = (menus: WeekMenu[]): WeekMenu[] =>
@@ -258,16 +271,32 @@ export const storageService = {
         ...w,
         days: w.days.map((d) => ({
           ...d,
-          isFreeDay: d.dayOfWeek === freeDay,
+          isFreeDay: freeEnabled && d.dayOfWeek === freeDay,
         })),
       }));
 
     const storedVersion = localStorage.getItem(STORAGE_KEYS.SEED_VERSION);
-    const CURRENT_VERSION = 'v2026_hospital_rotation_v3';
+    const CURRENT_VERSION = 'v2026_nutri_enrich_v4';
 
     const raw = localStorage.getItem(`${STORAGE_KEYS.MENUS}_${menuOwnerId}`);
     if (!raw || storedVersion !== CURRENT_VERSION) {
       const initial = getHospitalMenuSeed();
+      const existingRaw = localStorage.getItem(`${STORAGE_KEYS.MENUS}_${menuOwnerId}`);
+      if (existingRaw && storedVersion && storedVersion.startsWith('v2026_')) {
+        try {
+          const existing: WeekMenu[] = JSON.parse(existingRaw);
+          const hasUserEdits = localStorage.getItem(`${STORAGE_KEYS.MENUS}_${menuOwnerId}_edited`) === '1';
+          if (!hasUserEdits) {
+            this.saveMenus(initial, menuOwnerId);
+            localStorage.setItem(STORAGE_KEYS.SEED_VERSION, CURRENT_VERSION);
+            return applyFreeDay(initial);
+          }
+          localStorage.setItem(STORAGE_KEYS.SEED_VERSION, CURRENT_VERSION);
+          return applyFreeDay(existing);
+        } catch {
+          /* fallthrough */
+        }
+      }
       this.saveMenus(initial, menuOwnerId);
       localStorage.setItem(STORAGE_KEYS.SEED_VERSION, CURRENT_VERSION);
       return applyFreeDay(initial);
@@ -329,6 +358,11 @@ export const storageService = {
       updatedDays[dayIndex] = updatedDay;
       menus[weekIndex] = { ...menus[weekIndex], days: updatedDays };
       this.saveMenus(menus, menuOwnerId);
+      localStorage.setItem(`${STORAGE_KEYS.MENUS}_${menuOwnerId}_edited`, '1');
+      // Sync nube opcional (Supabase free) sin bloquear la UI
+      void import('./cloudSyncService').then(({ cloudSyncService }) =>
+        cloudSyncService.pushMenusQuietly()
+      );
     }
   },
 

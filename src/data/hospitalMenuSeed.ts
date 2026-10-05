@@ -295,7 +295,125 @@ const LUNCH_CATALOG: MenuDef[] = [
       item('Guisantes', '80g'),
       item('Aceite de oliva', '1.5 cdas total')
     ]
-  }
+  },
+  // --- Platos enriquecidos de la nutricionista (menús externos) ---
+  {
+    recipeName: 'Lentejas Estofadas con Ensalada o Gazpacho',
+    cookidooQuery: 'Lentejas estofadas',
+    items: [
+      item('Ensalada variada o gazpacho', '1 plato / 250 ml'),
+      item('Lentejas estofadas', '2 cucharones (~60g crudo)'),
+      item('Kiwi', '1 unidad', 'Postre'),
+      item('Pan integral', '20g'),
+      item('Aceite de oliva', '1.5 cdas'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Dorada/Lubina con Patata y Ensalada',
+    cookidooQuery: 'Dorada al horno',
+    items: [
+      item('Ensalada variada', '1 plato grande'),
+      item('Dorada o lubina', '150g'),
+      item('Patata', '150g'),
+      item('Fruta', '1 ración (grupo B 200g)'),
+      item('Aceite de oliva', '1.5 cdas'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Guiso de Pollo con Verduras y Cuscús',
+    cookidooQuery: 'Guiso de pollo',
+    items: [
+      item('Ensalada variada', '1 plato'),
+      item('Pollo sin piel', '100g'),
+      item('Verduras del guiso', '200g'),
+      item('Arroz o cuscús', 'puñado pequeño (~40g crudo)', 'Sustituible por patata'),
+      item('Fruta', '1 ración'),
+      item('Aceite de oliva', '1.5 cdas'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Alubias Estofadas o Ensalada de Alubias',
+    cookidooQuery: 'Alubias estofadas',
+    items: [
+      item('Ensalada o gazpacho', '1 plato'),
+      item('Alubias', '2 cucharones (~60g crudo)'),
+      item('Fruta', '1 ración'),
+      item('Pan', '20g'),
+      item('Aceite de oliva', '1.5 cdas'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Morcilla de Verano con Sepia',
+    cookidooQuery: 'Morcilla de verano',
+    items: [
+      item('Morcilla de verano', '1 plato', 'Tomate, cebolla, atún al natural, huevo'),
+      item('Sepia o calamar', '150g', 'Ajo y perejil'),
+      item('Pan', '1 rebanada (20g)'),
+      item('Fruta', '1 ración'),
+      item('Aceite de oliva', '1.5 cdas'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Salmón con Verdura y Pisto',
+    cookidooQuery: 'Salmón plancha',
+    items: [
+      item('Verdura de acompañamiento', '200g'),
+      item('Salmón', '100g'),
+      item('Fruta', '1 ración'),
+      item('Aceite de oliva', '1.5 cdas'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Judías Verdes con Tortilla',
+    cookidooQuery: 'Judías verdes salteadas',
+    items: [
+      item('Judías verdes salteadas', '200g', 'Con un poco de jamón serrano magro'),
+      item('Tortilla francesa', '1 huevo'),
+      item('Pan', '1 rebanada (20g)'),
+      item('Fruta', '1 ración'),
+      item('Aceite de oliva', '1.5 cdas'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Arroz Tres Delicias / Paella Ligera',
+    cookidooQuery: 'Arroz tres delicias',
+    items: [
+      item('Ensalada variada', '1 plato'),
+      item('Arroz tres delicias o paella casera', 'plato pequeño (~60g crudo)'),
+      item('Fruta', '1 ración'),
+      item('Aceite de oliva', '1.5 cdas'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Berenjenas Rellenas de Ternera',
+    cookidooQuery: 'Berenjenas rellenas',
+    items: [
+      item('Berenjenas rellenas', '1 unidad', 'Tomate, cebolla y ternera magra 100g'),
+      item('Puré de patata', '1 patata pequeña (~100g)'),
+      item('Fruta', '1 ración'),
+      item('Aceite de oliva', '1.5 cdas'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Ensalada Murciana Nutricionista + Tortilla',
+    cookidooQuery: 'Ensalada murciana',
+    items: [
+      item('Ensalada murciana', '1 plato', 'Tomate de pera, cebolla, alcaparras, atún al natural, huevo duro'),
+      item('Tortilla de verduras', '1 ración'),
+      item('Fruta', '1 ración'),
+      item('Aceite de oliva', '1.5 cdas'),
+    ],
+    dessertType: 'integrated',
+  },
 ];
 
 // ============================================================================
@@ -548,7 +666,118 @@ const DINNER_CATALOG: MenuDef[] = [
       item('Pan', '20g'),
       item('Aceite de oliva', '1 cda')
     ]
-  }
+  },
+  // --- Cenas nutricionista ---
+  {
+    recipeName: 'Espárragos con Jamón York y Kéfir',
+    cookidooQuery: 'Espárragos trigueros',
+    items: [
+      item('Espárragos trigueros y ajos tiernos', '200g', 'Salteados'),
+      item('Jamón york magro', '60g'),
+      item('Yogur o kéfir desnatado', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Huevo Revuelto con Verduras',
+    cookidooQuery: 'Revuelto de verduras',
+    items: [
+      item('Verduras salteadas', '200g'),
+      item('Huevo', '1 unidad', 'Revuelto'),
+      item('Yogur o kéfir', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Ensalada con Atún al Natural',
+    cookidooQuery: 'Ensalada atún',
+    items: [
+      item('Ensalada variada', '1 plato grande'),
+      item('Atún al natural', '1 lata escurrida'),
+      item('Yogur desnatado', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Escalivada con Queso Fresco',
+    cookidooQuery: 'Escalivada',
+    items: [
+      item('Escalivada', '200g', 'Pimiento, berenjena, cebolla'),
+      item('Queso fresco aliñado', '60g'),
+      item('Yogur desnatado', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Coliflor y Pollo a la Plancha',
+    cookidooQuery: 'Coliflor plancha',
+    items: [
+      item('Coliflor a la plancha', '200g'),
+      item('Pollo a la plancha', '100g'),
+      item('Yogur desnatado', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Pisto con Jamón Cocido',
+    cookidooQuery: 'Pisto murciano',
+    items: [
+      item('Pisto', '250g', 'Berenjena, calabacín, pimiento, tomate, cebolla'),
+      item('Jamón cocido', '60g'),
+      item('Yogur desnatado', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Verduras Plancha con Pescado Blanco',
+    cookidooQuery: 'Verduras a la plancha',
+    items: [
+      item('Verduras a la plancha', '200g'),
+      item('Pescado blanco', '150g'),
+      item('Yogur desnatado', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Zarangollo sin Patata',
+    cookidooQuery: 'Zarangollo',
+    items: [
+      item('Tomate partido', '150g'),
+      item('Zarangollo sin patata', '200g', 'Calabacín, cebolla, huevo'),
+      item('Yogur desnatado', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Gambas al Ajillo o Pescado Blanco',
+    cookidooQuery: 'Gambas al ajillo',
+    items: [
+      item('Puré de verduras sin patata', '250g'),
+      item('Gambas al ajillo o pescado blanco', '120–150g'),
+      item('Yogur desnatado', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
+  {
+    recipeName: 'Champiñones con Jamón Serrano',
+    cookidooQuery: 'Champiñones ajo perejil',
+    items: [
+      item('Champiñones salteados', '200g', 'Ajo y perejil'),
+      item('Jamón serrano magro', '2 lonchas (~30g)'),
+      item('Yogur desnatado', '1 unidad'),
+      item('Aceite de oliva', '1 cda'),
+    ],
+    dessertType: 'integrated',
+  },
 ];
 
 // ============================================================================
@@ -624,19 +853,25 @@ const RECENA_ITEMS: MealItem[] = [
 // Array of 8 weeks. Each week is 7 days. Each day is [lunchIndex, dinnerIndex]
 // Índices 0-based: comida_01=0 … comida_21=20 | cena_01=0 … cena_21=20
 // Semanas 1-3 = rotación OFICIAL Hospital Morales Meseguer
+// Semanas 1-3 = rotación OFICIAL Hospital. Semanas 4-8 mezclan hospital + nutricionista.
+// Índices comida 0-30, cena 0-30. Día 5 = Sábado (siempre con menú real).
 const ROTATION_TABLE: [number, number][][] = [
-  // Sem 1: Comidas 1-7 + Cenas 11-17
+  // Sem 1 hospital
   [[0, 10], [1, 11], [2, 12], [3, 13], [4, 14], [5, 15], [6, 16]],
-  // Sem 2: Comidas 8-10,3,6,8,9 + Cenas 18-21,13,16,18
+  // Sem 2 hospital
   [[7, 17], [8, 18], [9, 19], [2, 20], [5, 12], [7, 15], [8, 17]],
-  // Sem 3: Comidas 1,5,7,4,10,2,6 + Cenas 20,15,12,19,17,14,11
+  // Sem 3 hospital
   [[0, 19], [4, 14], [6, 11], [3, 18], [9, 16], [1, 13], [5, 10]],
-  // Semanas 4-8: nuevas combinaciones sin repetir pares de sem 1-3
-  [[10, 14], [11, 11], [12, 0], [13, 1], [14, 2], [15, 3], [16, 4]],
-  [[17, 5], [18, 6], [19, 7], [20, 8], [1, 9], [3, 15], [7, 16]],
-  [[4, 17], [6, 18], [8, 19], [9, 20], [11, 10], [13, 12], [15, 13]],
-  [[16, 14], [17, 0], [18, 1], [19, 2], [20, 3], [0, 4], [2, 5]],
-  [[10, 6], [12, 7], [14, 8], [5, 9], [7, 11], [1, 12], [3, 16]],
+  // Sem 4 — nutricionista (incl. sábado lentejas + espárragos)
+  [[21, 21], [22, 22], [23, 23], [24, 24], [25, 25], [26, 26], [27, 27]],
+  // Sem 5 — mezcla
+  [[28, 28], [29, 29], [21, 22], [10, 21], [12, 24], [30, 25], [14, 26]],
+  // Sem 6
+  [[22, 27], [24, 28], [26, 29], [28, 21], [30, 23], [23, 25], [25, 27]],
+  // Sem 7
+  [[27, 24], [29, 26], [21, 28], [23, 29], [25, 22], [22, 30], [24, 21]],
+  // Sem 8
+  [[26, 23], [28, 25], [30, 27], [21, 29], [23, 21], [29, 24], [27, 26]],
 ];
 
 const STANDARD_DESSERT = 'Fruta fresca (Grupo A 300g / B 200g / C 160g / D 100g) ó 2 yogures desnatados sin azúcar';

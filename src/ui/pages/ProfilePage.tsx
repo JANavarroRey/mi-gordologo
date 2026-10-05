@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Calendar, Sparkles, Heart, Bell, Share2, BookOpen, RefreshCw, Link as LinkIcon, UserPlus, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Users, Calendar, Sparkles, Heart, Bell, Share2, BookOpen, RefreshCw, Link as LinkIcon, UserPlus, CheckCircle2, ShieldCheck, Cloud } from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
+import { cloudSyncService } from '@/domain/services/cloudSyncService';
 import { UserSelectionModal } from '@/ui/components/onboarding/UserSelectionModal';
 import { NewUserWizardModal } from '@/ui/components/onboarding/NewUserWizardModal';
 import { TutorialModal } from '@/ui/components/tutorial/TutorialModal';
@@ -15,13 +16,17 @@ export const ProfilePage: React.FC = () => {
   const [activeUser, setActiveUser] = useState<UserProfile>(() => storageService.getActiveProfile());
   const [servings, setServings] = useState(() => storageService.getServings());
   const [freeDay, setFreeDay] = useState(() => storageService.getFreeDay());
+  const [freeDayEnabled, setFreeDayEnabled] = useState(() => storageService.isFreeDayEnabled());
   const [weighInDay, setWeighInDay] = useState(() => storageService.getWeighInDay());
   const [geminiKey, setGeminiKey] = useState(() => storageService.getGeminiApiKey());
-  
+  const [notifMsg, setNotifMsg] = useState<string | null>(null);
   const [showUserModal, setShowUserModal] = useState(false);
   const [showWizardModal, setShowWizardModal] = useState(false);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
   const [keySavedFeedback, setKeySavedFeedback] = useState(false);
+  const [familyKey, setFamilyKey] = useState(() => cloudSyncService.getFamilyKey());
+  const [cloudMsg, setCloudMsg] = useState<string | null>(null);
+  const [cloudBusy, setCloudBusy] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<string>(() => {
     return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
   });
@@ -31,6 +36,7 @@ export const ProfilePage: React.FC = () => {
     setActiveUser(storageService.getActiveProfile());
     setServings(storageService.getServings());
     setFreeDay(storageService.getFreeDay());
+    setFreeDayEnabled(storageService.isFreeDayEnabled());
     setWeighInDay(storageService.getWeighInDay());
     setGeminiKey(storageService.getGeminiApiKey());
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -44,9 +50,17 @@ export const ProfilePage: React.FC = () => {
     window.dispatchEvent(new Event('storage'));
   };
 
+  const handleToggleFreeDayEnabled = (enabled: boolean) => {
+    setFreeDayEnabled(enabled);
+    storageService.setFreeDayEnabled(enabled);
+    window.dispatchEvent(new Event('storage'));
+  };
+
   const handleSetFreeDay = (day: number) => {
     setFreeDay(day);
     storageService.setFreeDay(day);
+    storageService.setFreeDayEnabled(true);
+    setFreeDayEnabled(true);
     window.dispatchEvent(new Event('storage'));
   };
 
@@ -71,22 +85,84 @@ export const ProfilePage: React.FC = () => {
     setTimeout(() => setKeySavedFeedback(false), 3000);
   };
 
+  const handleSaveFamilyKey = () => {
+    cloudSyncService.setFamilyKey(familyKey);
+    setCloudMsg('Clave familiar guardada en este móvil.');
+  };
+
+  const handleCloudPush = async () => {
+    setCloudBusy(true);
+    setCloudMsg(null);
+    cloudSyncService.setFamilyKey(familyKey);
+    const res = await cloudSyncService.push();
+    setCloudMsg(res.message);
+    setCloudBusy(false);
+  };
+
+  const handleCloudPull = async () => {
+    setCloudBusy(true);
+    setCloudMsg(null);
+    cloudSyncService.setFamilyKey(familyKey);
+    const res = await cloudSyncService.pull();
+    setCloudMsg(res.message);
+    if (res.ok) {
+      setProfiles(storageService.getProfiles());
+      setActiveUser(storageService.getActiveProfile());
+      setServings(storageService.getServings());
+      setFreeDay(storageService.getFreeDay());
+      setFreeDayEnabled(storageService.isFreeDayEnabled());
+      setWeighInDay(storageService.getWeighInDay());
+    }
+    setCloudBusy(false);
+  };
+
   const handleRequestNotifications = async () => {
-    if (!('Notification' in window)) {
-      alert('Tu navegador no soporta notificaciones locales.');
+    setNotifMsg(null);
+
+    // Android/Chrome: las notificaciones web requieren HTTPS + gesto de usuario
+    if (!window.isSecureContext) {
+      setNotifMsg('Las notificaciones solo funcionan en HTTPS (o localhost).');
       return;
     }
+    if (!('Notification' in window)) {
+      setNotifMsg('Este navegador no soporta notificaciones. Prueba Chrome y “Añadir a pantalla de inicio”.');
+      return;
+    }
+
     try {
+      if (Notification.permission === 'denied') {
+        setNotifMsg(
+          'El permiso está bloqueado. En Chrome: ⋮ → Información del sitio → Notificaciones → Permitir, y vuelve a pulsar.'
+        );
+        setNotificationPermission('denied');
+        return;
+      }
+
       const perm = await Notification.requestPermission();
       setNotificationPermission(perm);
-      if (perm === 'granted') {
-        new Notification('⚖️ Mi Gordólogo', {
-          body: `¡Avisos activados! Te recordaremos pesarte cada ${['domingo','lunes','martes','miércoles','jueves','viernes','sábado'][weighInDay]}.`,
-          icon: assetUrl('logo.jpg'),
-        });
+
+      if (perm !== 'granted') {
+        setNotifMsg('No se concedió el permiso. Si lo denegaste, actívalo en ajustes del sitio.');
+        return;
       }
-    } catch {
-      alert('No se pudo solicitar permiso de notificaciones.');
+
+      const title = '⚖️ Mi Gordólogo';
+      const body = `Avisos activados. Te recordaremos el pesaje los ${WEEKDAY_LABELS[weighInDay]}.`;
+      const icon = assetUrl('logo.svg');
+
+      // En Android PWA es más fiable mostrar vía Service Worker
+      const reg = await navigator.serviceWorker?.ready.catch(() => null);
+      if (reg?.showNotification) {
+        await reg.showNotification(title, { body, icon, badge: icon });
+      } else {
+        new Notification(title, { body, icon });
+      }
+      setNotifMsg('¡Listo! Notificaciones activadas en este móvil.');
+    } catch (err) {
+      console.error(err);
+      setNotifMsg(
+        'No se pudo activar. Instala la app (Añadir a pantalla de inicio) y vuelve a intentarlo desde ahí.'
+      );
     }
   };
 
@@ -255,40 +331,54 @@ export const ProfilePage: React.FC = () => {
         </div>
 
         <div className="pt-3 border-t border-neutral-100">
-          <div className="flex items-center space-x-2 mb-1.5">
-            <Calendar className="w-4 h-4 text-emerald-600" />
-            <h3 className="font-bold text-sm text-neutral-900">Día Libre de la Dieta</h3>
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center space-x-2">
+              <Calendar className="w-4 h-4 text-emerald-600" />
+              <h3 className="font-bold text-sm text-neutral-900">Día Libre de la Dieta</h3>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-bold text-neutral-700">
+              <input
+                type="checkbox"
+                checked={freeDayEnabled}
+                onChange={(e) => handleToggleFreeDayEnabled(e.target.checked)}
+                className="w-4 h-4 rounded border-neutral-300 text-emerald-600"
+              />
+              Activar
+            </label>
           </div>
           <p className="text-xs text-neutral-500 mb-2.5 leading-relaxed">
-            Día para disfrutar de tu plato favorito sin contar calorías.
+            Por defecto <strong>no hay día libre</strong>: todos los días tienen menú (incluido el sábado).
+            Actívalo solo si quieres un día sin dieta pautada.
           </p>
-          <div className="grid grid-cols-4 gap-1.5">
-            {[
-              { id: 0, label: 'Lun' },
-              { id: 1, label: 'Mar' },
-              { id: 2, label: 'Mié' },
-              { id: 3, label: 'Jue' },
-              { id: 4, label: 'Vie' },
-              { id: 5, label: 'Sáb' },
-              { id: 6, label: 'Dom' },
-            ].map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                onClick={() => handleSetFreeDay(d.id)}
-                className={`p-2 rounded-xl border text-xs font-semibold transition-all ${
-                  freeDay === d.id
-                    ? 'bg-amber-100 border-amber-400 text-amber-900 font-bold'
-                    : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
-                }`}
-              >
-                🎉 {d.label}
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-neutral-500 mt-2">
-            Decisión personal (no del hospital). Por defecto: sábado.
-          </p>
+          {freeDayEnabled && (
+            <>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  { id: 0, label: 'Lun' },
+                  { id: 1, label: 'Mar' },
+                  { id: 2, label: 'Mié' },
+                  { id: 3, label: 'Jue' },
+                  { id: 4, label: 'Vie' },
+                  { id: 5, label: 'Sáb' },
+                  { id: 6, label: 'Dom' },
+                ].map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => handleSetFreeDay(d.id)}
+                    className={`p-2 rounded-xl border text-xs font-semibold transition-all ${
+                      freeDay === d.id
+                        ? 'bg-amber-100 border-amber-400 text-amber-900 font-bold'
+                        : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                    }`}
+                  >
+                    🎉 {d.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-neutral-500 mt-2">Decisión personal, no clínica.</p>
+            </>
+          )}
         </div>
       </div>
 
@@ -364,6 +454,7 @@ export const ProfilePage: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button
+              type="button"
               onClick={handleRequestNotifications}
               className="p-3 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs transition-colors"
             >
@@ -372,6 +463,7 @@ export const ProfilePage: React.FC = () => {
             </button>
 
             <button
+              type="button"
               onClick={handleTestWhatsAppPing}
               className="p-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors"
             >
@@ -380,10 +472,23 @@ export const ProfilePage: React.FC = () => {
             </button>
           </div>
 
+          {notifMsg && (
+            <p
+              className={`text-[11px] leading-relaxed p-2.5 rounded-xl border ${
+                notifMsg.startsWith('¡Listo')
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  : 'bg-amber-50 border-amber-200 text-amber-950'
+              }`}
+            >
+              {notifMsg}
+            </p>
+          )}
+
           <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-200/60 flex items-start space-x-2 text-[11px] text-emerald-900 leading-relaxed">
             <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
             <p>
-              <strong>100% Privado y sin registro:</strong> Mi Gordólogo funciona en tu propio dispositivo sin servidores externos ni emails spam. Al activar las notificaciones, tu móvil te avisará el día de pesaje.
+              <strong>Privado en tu móvil:</strong> los avisos son locales (sin servidor de push). En Android usa Chrome → menú →
+              &quot;Añadir a pantalla de inicio&quot; y activa el permiso desde ahí. Si aparece bloqueado, desbloquéalo en Información del sitio.
             </p>
           </div>
         </div>
@@ -402,14 +507,14 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Clave Gemini API (Opcional) */}
+      {/* Clave Gemini API — se guarda solo en este dispositivo (nunca en GitHub) */}
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-2.5">
         <div className="flex items-center space-x-2">
           <Sparkles className="w-4 h-4 text-emerald-600" />
-          <h3 className="font-bold text-sm text-neutral-800">Clave de IA (Gemini API - Opcional)</h3>
+          <h3 className="font-bold text-sm text-neutral-800">Clave de IA (Gemini) — recomendaciones</h3>
         </div>
         <p className="text-[11px] text-neutral-500 leading-relaxed">
-          La app funciona 100% gratis con el motor nutricional del hospital. Opcionalmente puedes conectar tu clave gratuita de{' '}
+          Pega aquí tu clave gratuita de{' '}
           <a
             href="https://aistudio.google.com/apikey"
             target="_blank"
@@ -418,14 +523,15 @@ export const ProfilePage: React.FC = () => {
           >
             Google AI Studio
           </a>
-          .
+          . Se guarda solo en este móvil (localStorage), no en el repositorio público. Sin clave, El Gordólogo usa el motor offline del hospital.
         </p>
         <form onSubmit={handleSaveGeminiKey} className="flex space-x-2">
           <input
             type="password"
-            placeholder="Clave AI Studio..."
+            placeholder="AIza… (pegar clave)"
             value={geminiKey}
             onChange={(e) => setGeminiKey(e.target.value)}
+            autoComplete="off"
             className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 font-mono"
           />
           <button
@@ -436,7 +542,66 @@ export const ProfilePage: React.FC = () => {
           </button>
         </form>
         {keySavedFeedback && (
-          <p className="text-[11px] text-emerald-700 font-semibold">✓ Clave guardada correctamente.</p>
+          <p className="text-[11px] text-emerald-700 font-semibold">✓ Clave guardada en este dispositivo.</p>
+        )}
+        {geminiKey.trim() ? (
+          <p className="text-[10px] text-emerald-800">Estado: clave presente — el chat y “Ajustar” usarán Gemini.</p>
+        ) : (
+          <p className="text-[10px] text-amber-800">Estado: sin clave — recomendaciones offline (más genéricas).</p>
+        )}
+      </div>
+
+      {/* Nube familiar gratis (Supabase Free) */}
+      <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-2.5">
+        <div className="flex items-center space-x-2">
+          <Cloud className="w-4 h-4 text-sky-600" />
+          <h3 className="font-bold text-sm text-neutral-800">Guardar cambios en la nube (gratis)</h3>
+        </div>
+        <p className="text-[11px] text-neutral-500 leading-relaxed">
+          Los menús se guardan siempre en el móvil. Para compartirlos entre dispositivos (y no perder ajustes), usa Supabase Free:
+          ejecuta <code className="text-[10px] bg-neutral-100 px-1 rounded">supabase/schema.sql</code> en tu proyecto y configura
+          <code className="text-[10px] bg-neutral-100 px-1 rounded ml-0.5">VITE_SUPABASE_URL</code> +
+          <code className="text-[10px] bg-neutral-100 px-1 rounded ml-0.5">VITE_SUPABASE_ANON_KEY</code>.
+        </p>
+        <p className="text-[11px] font-semibold text-neutral-700">
+          Backend: {cloudSyncService.isConfigured() ? '✓ Supabase conectado' : '○ Pendiente de configurar en el build'}
+        </p>
+        <div className="flex space-x-2">
+          <input
+            type="password"
+            placeholder="Clave familiar (mín. 6 caracteres)"
+            value={familyKey}
+            onChange={(e) => setFamilyKey(e.target.value)}
+            className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 font-mono"
+          />
+          <button
+            type="button"
+            onClick={handleSaveFamilyKey}
+            className="px-3 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-neutral-800 font-bold text-xs"
+          >
+            Guardar
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={cloudBusy}
+            onClick={handleCloudPush}
+            className="p-2.5 rounded-xl bg-sky-700 hover:bg-sky-800 disabled:opacity-50 text-white text-xs font-bold"
+          >
+            Subir a la nube
+          </button>
+          <button
+            type="button"
+            disabled={cloudBusy}
+            onClick={handleCloudPull}
+            className="p-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-900 text-xs font-bold"
+          >
+            Restaurar desde nube
+          </button>
+        </div>
+        {cloudMsg && (
+          <p className="text-[11px] text-neutral-700 leading-relaxed">{cloudMsg}</p>
         )}
       </div>
 

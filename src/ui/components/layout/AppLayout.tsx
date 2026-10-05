@@ -26,8 +26,8 @@ export function AppLayout() {
 
   const navItems = [
     { to: '/menu', icon: UtensilsCrossed, label: 'Menú' },
-    { to: '/seguimiento', icon: TrendingUp, label: 'Progreso' },
     { to: '/compra', icon: ShoppingCart, label: 'Lista' },
+    { to: '/seguimiento', icon: TrendingUp, label: 'Progreso' },
     { to: '/perfil', icon: User, label: 'Mi Perfil' },
   ];
 

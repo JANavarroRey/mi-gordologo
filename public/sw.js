@@ -1,14 +1,12 @@
 /* Mi Gordólogo — Service Worker (cache estático + offline shell) */
-const CACHE_NAME = 'migordologo-v3';
+const CACHE_NAME = 'migordologo-v5';
 const PRECACHE = [
   './',
   './index.html',
   './manifest.json',
-  './logo.jpg',
-  './og-image.jpg',
-  './apple-touch-icon.jpg',
-  './icon-192.jpg',
-  './icon-512.jpg',
+  './logo.svg',
+  './icon-192.svg',
+  './icon-512.svg',
   './favicon.svg',
 ];
 

@@ -169,6 +169,100 @@ export const MenuPage: React.FC = () => {
     }, 200);
   };
 
+  /** Genera PDF real (jspdf) y lo comparte en Android vía Web Share API. */
+  const handleExportPdf = async () => {
+    try {
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const margin = 8;
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const colW = (pageW - margin * 2) / 4;
+      let y = margin;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text(`Mi Gordólogo — Semana ${activeWeek.weekNumber}`, margin, y);
+      y += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(
+        `${activeProfile.name} · ${servings === 1 ? '1 ración' : '2 raciones'} · 1.500 kcal`,
+        margin,
+        y
+      );
+      y += 6;
+
+      const headers = ['Día', 'Desayuno', 'Comida', 'Cena'];
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      headers.forEach((h, i) => doc.text(h, margin + i * colW + 1, y));
+      y += 2;
+      doc.setDrawColor(180);
+      doc.line(margin, y, pageW - margin, y);
+      y += 4;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+
+      const wrap = (text: string, maxW: number): string[] => doc.splitTextToSize(text, maxW - 2) as string[];
+
+      for (const d of activeWeek.days) {
+        const dayLabel = d.isFreeDay ? `${d.dayLabel} (Libre)` : d.dayLabel;
+        const breakfast = d.isFreeDay
+          ? '—'
+          : d.meals.breakfast.items.map((i) => i.name).join(', ') || '—';
+        const lunch = d.isFreeDay
+          ? 'Día libre'
+          : d.meals.lunch.recipeName || d.meals.lunch.items.map((i) => i.name).join(', ') || '—';
+        const dinner = d.isFreeDay
+          ? 'Día libre'
+          : d.meals.dinner.recipeName || d.meals.dinner.items.map((i) => i.name).join(', ') || '—';
+
+        const cells = [dayLabel, breakfast, lunch, dinner].map((t) => wrap(t, colW));
+        const rowH = Math.max(...cells.map((c) => c.length)) * 3.2 + 2;
+        if (y + rowH > pageH - margin) {
+          doc.addPage();
+          y = margin;
+        }
+        cells.forEach((lines, i) => {
+          doc.text(lines, margin + i * colW + 1, y);
+        });
+        y += rowH;
+        doc.setDrawColor(230);
+        doc.line(margin, y - 1, pageW - margin, y - 1);
+      }
+
+      const fileName = `menu-semana-${activeWeek.weekNumber}-gordologo.pdf`;
+      const blob = doc.output('blob');
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+
+      const nav = navigator as Navigator & {
+        canShare?: (data?: ShareData) => boolean;
+        share?: (data?: ShareData) => Promise<void>;
+      };
+
+      if (nav.share && (!nav.canShare || nav.canShare({ files: [file] }))) {
+        try {
+          await nav.share({
+            title: `Menú semana ${activeWeek.weekNumber}`,
+            text: 'Menú Mi Gordólogo',
+            files: [file],
+          });
+          return;
+        } catch (err) {
+          // Usuario canceló o share falló → descarga
+          if ((err as Error)?.name === 'AbortError') return;
+        }
+      }
+
+      doc.save(fileName);
+    } catch (err) {
+      console.error(err);
+      // Fallback: diálogo de impresión del navegador
+      handlePrint();
+    }
+  };
+
   const buildDayShareText = () => {
     let text = `🍽️ MENÚ DEL DÍA — ${activeDay.dayLabel.toUpperCase()}\n`;
     text += `👤 ${activeProfile.name} (${servings} ${servings === 1 ? 'ración' : 'raciones'})\n\n`;
@@ -387,8 +481,8 @@ export const MenuPage: React.FC = () => {
                 <Mail className="w-4 h-4" />
               </button>
               <button
-                onClick={handlePrint}
-                title="Imprimir / PDF"
+                onClick={handleExportPdf}
+                title="Descargar o compartir PDF"
                 className="p-2.5 min-w-[44px] min-h-[44px] rounded-xl bg-neutral-100 text-neutral-700 hover:bg-neutral-200 transition-colors flex items-center justify-center"
               >
                 <Printer className="w-4 h-4" />
@@ -451,13 +545,13 @@ export const MenuPage: React.FC = () => {
                   {/* Lista limpia con bullet points y cantidades reales */}
                   <ul className="space-y-1.5 py-1">
                     {meal.items.map((item, idx) => (
-                      <li key={idx} className="flex items-baseline justify-between text-xs sm:text-sm py-1 border-b border-neutral-100/60 last:border-none">
-                        <div className="flex items-start space-x-2 pr-2">
-                          <span className="text-emerald-600 font-bold select-none">•</span>
-                          <span className="text-neutral-800 font-medium leading-snug">{item.name}</span>
+                      <li key={idx} className="flex flex-col gap-1 text-xs sm:text-sm py-1.5 border-b border-neutral-100/60 last:border-none min-w-0">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <span className="text-emerald-600 font-bold select-none shrink-0">•</span>
+                          <span className="text-neutral-800 font-medium leading-snug break-words min-w-0">{item.name}</span>
                         </div>
                         {item.quantity && (
-                          <span className="shrink-0 font-semibold text-emerald-800 text-xs px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200/50">
+                          <span className="self-start ml-4 font-semibold text-emerald-800 text-[10px] sm:text-[11px] leading-snug px-1.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200/50 break-words max-w-full">
                             {formatQuantity(item.quantity)}
                           </span>
                         )}
@@ -519,8 +613,9 @@ export const MenuPage: React.FC = () => {
                 <span className="hidden sm:inline">WhatsApp</span>
               </button>
               <button
-                onClick={handlePrint}
-                title="Imprimir / PDF horizontal"
+                type="button"
+                onClick={handleExportPdf}
+                title="Descargar o compartir PDF"
                 className="px-2.5 py-1.5 rounded-xl bg-neutral-800 text-white hover:bg-neutral-900 text-xs font-bold flex items-center space-x-1 transition-colors"
               >
                 <Printer className="w-3.5 h-3.5" />
