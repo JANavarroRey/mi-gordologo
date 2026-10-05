@@ -437,15 +437,17 @@ export const MenuPage: React.FC = () => {
                   className="bg-white rounded-2xl p-4 shadow-xs border border-neutral-200/80 hover:border-neutral-300 transition-all"
                 >
                   {/* Cabecera de la comida */}
-                  <div className="flex items-center justify-between pb-2 border-b border-neutral-100 mb-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xl">{MEAL_EMOJIS[mealType]}</span>
-                      <div>
+                  <div className="flex items-start justify-between gap-2 pb-2 border-b border-neutral-100 mb-2 min-w-0">
+                    <div className="flex items-start space-x-2 min-w-0 flex-1 overflow-hidden">
+                      <span className="text-xl shrink-0">{MEAL_EMOJIS[mealType]}</span>
+                      <div className="min-w-0">
                         <h3 className="font-bold text-sm text-neutral-900 leading-tight">
                           {MEAL_LABELS[mealType]}
                         </h3>
                         {meal.recipeName && (
-                          <p className="text-xs font-semibold text-emerald-800">{meal.recipeName}</p>
+                          <p className="text-xs font-semibold text-emerald-800 break-words leading-snug">
+                            {meal.recipeName}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -453,7 +455,7 @@ export const MenuPage: React.FC = () => {
                     {/* Botón Ajustar estandarizado */}
                     <button
                       onClick={() => handleOpenAiModal(mealType)}
-                      className="h-7 px-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold border border-emerald-200/60 flex items-center space-x-1 transition-colors"
+                      className="h-7 px-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold border border-emerald-200/60 flex items-center space-x-1 transition-colors shrink-0"
                     >
                       <Sparkles className="w-3 h-3 text-emerald-700" />
                       <span>Ajustar</span>
