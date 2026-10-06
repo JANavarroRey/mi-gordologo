@@ -1,5 +1,5 @@
 /* Mi Gordólogo — Service Worker (cache estático + offline shell) */
-const CACHE_NAME = 'migordologo-v22';
+const CACHE_NAME = 'migordologo-v23';
 const PRECACHE = [
   './',
   './index.html',
