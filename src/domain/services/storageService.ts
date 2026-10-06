@@ -452,6 +452,29 @@ export const storageService = {
     window.dispatchEvent(new Event('storage'));
   },
 
+  getMenuDisplayKcal(userId?: string): number {
+    const id = userId || this.getActiveUserId();
+    const profile = this.getProfileById(id);
+    const fromIntake = profile?.foodIntake?.estimatedDailyKcal;
+    if (fromIntake && fromIntake > 0) return fromIntake;
+    const stored = Number(localStorage.getItem(`${STORAGE_KEYS.MENUS}_${id}_display_kcal`) || 0);
+    if (stored > 0) return stored;
+    return profile?.targetCalories || 1500;
+  },
+
+  setMenuDisplayKcal(kcal: number, userId?: string): void {
+    const id = userId || this.getActiveUserId();
+    localStorage.setItem(`${STORAGE_KEYS.MENUS}_${id}_display_kcal`, String(Math.round(kcal)));
+  },
+
+  /** Tras cambiar el menú (PDF / hábitos), regenera la lista de compra limpiando checks. */
+  resetShoppingListsForMenuChange(): void {
+    for (let w = 1; w <= 8; w++) {
+      localStorage.removeItem(`${STORAGE_KEYS.SHOPPING}_checked_${w}`);
+    }
+    window.dispatchEvent(new Event('storage'));
+  },
+
   updateDayMenu(weekIndex: number, dayIndex: number, updatedDay: WeekMenu['days'][0], userId?: string): void {
     const targetUser = userId || this.getActiveUserId();
     const profile = this.getProfileById(targetUser);

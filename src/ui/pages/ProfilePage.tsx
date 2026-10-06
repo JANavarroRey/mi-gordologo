@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Users, Calendar, Heart, Bell, Share2, UserPlus, CheckCircle2, ShieldCheck, LogOut, KeyRound, Scale, FileUp, ClipboardList } from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
 import { backendService } from '@/domain/services/backendService';
@@ -11,11 +12,13 @@ import { SuperAdminPanel } from '@/ui/components/admin/SuperAdminPanel';
 import { HospitalGuidelinesCard } from '@/ui/components/guidelines/HospitalGuidelinesCard';
 import { assetUrl } from '@/shared/assets';
 import type { FoodIntake, UserProfile } from '@/domain/models/types';
-import { importMenuFromPdf, personalizeFromIntake } from '@/domain/services/menuPersonalizeService';
+import { importMenuFromPdf, personalizeFromIntake, type MenuImportResult } from '@/domain/services/menuPersonalizeService';
+import { formatKcalLabel } from '@/domain/services/calorieEstimateService';
 
 const WEEKDAY_LABELS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'] as const;
 
 export const ProfilePage: React.FC = () => {
+  const navigate = useNavigate();
   const [activeUser, setActiveUser] = useState<UserProfile>(() => storageService.getActiveProfile());
   const [servings, setServings] = useState(() => storageService.getServings());
   const [freeDay, setFreeDay] = useState(() => storageService.getFreeDay());
@@ -29,7 +32,8 @@ export const ProfilePage: React.FC = () => {
   const [habitsError, setHabitsError] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
-  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<MenuImportResult | null>(null);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
   const [ownPassword, setOwnPassword] = useState('');
   const [pwdMsg, setPwdMsg] = useState<string | null>(null);
@@ -101,8 +105,7 @@ export const ProfilePage: React.FC = () => {
     setHabitsBusy(true);
     setHabitsError(null);
     try {
-      const msg = await personalizeFromIntake(intake);
-      setImportMsg(msg);
+      await personalizeFromIntake(intake);
       setShowHabitsModal(false);
       setActiveUser(storageService.getActiveProfile());
       window.dispatchEvent(new Event('storage'));
@@ -115,14 +118,15 @@ export const ProfilePage: React.FC = () => {
 
   const handleImportPdf = async (file: File) => {
     setImportBusy(true);
-    setImportMsg(null);
+    setImportError(null);
+    setImportSuccess(null);
     try {
-      const msg = await importMenuFromPdf(file);
-      setImportMsg(msg);
+      const result = await importMenuFromPdf(file);
+      setImportSuccess(result);
       setActiveUser(storageService.getActiveProfile());
       window.dispatchEvent(new Event('storage'));
     } catch (err) {
-      setImportMsg(err instanceof Error ? err.message : 'No se pudo importar el PDF.');
+      setImportError(err instanceof Error ? err.message : 'No se pudo importar el PDF.');
     } finally {
       setImportBusy(false);
     }
@@ -194,6 +198,7 @@ export const ProfilePage: React.FC = () => {
   const isPepeProfile = storageService.isSuperadmin(activeUser.id);
   const isMaria = activeUser.id === 'maria_ignacia';
   const importedFromPdf = Boolean(activeUser.foodIntake?.importedFromPdf);
+  const displayKcal = storageService.getMenuDisplayKcal(activeUser.id);
 
   return (
     <div className="space-y-4">
@@ -252,10 +257,10 @@ export const ProfilePage: React.FC = () => {
         </div>
         <p className="text-[11px] text-neutral-500 leading-relaxed">
           {isMaria
-            ? `Menú hospitalario (${activeUser.targetCalories} kcal). Los cambios de platos se guardan para este perfil.`
+            ? `Menú hospitalario (${formatKcalLabel(activeUser.targetCalories)}). Los cambios de platos se guardan para este perfil.`
             : importedFromPdf
-              ? 'Menú de comidas y cenas importado desde PDF (sin recorte de calorías). Desayunos y meriendas se mantienen.'
-              : `Menú propio (${activeUser.targetCalories} kcal). Tras el cuestionario, comidas y cenas se adaptan a hábitos.`}
+              ? `Menú importado desde PDF (~${formatKcalLabel(displayKcal)}/día, estimación). Desayunos y meriendas se mantienen.`
+              : `Menú propio (~${formatKcalLabel(displayKcal)}). Tras el cuestionario, comidas y cenas se adaptan a hábitos.`}
         </p>
         <form onSubmit={(e) => void handleChangePassword(e)} className="flex gap-2">
           <input
@@ -283,7 +288,8 @@ export const ProfilePage: React.FC = () => {
             <button
               type="button"
               onClick={() => {
-                setImportMsg(null);
+                setImportError(null);
+                setImportSuccess(null);
                 setShowImportModal(true);
               }}
               className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-emerald-200 text-emerald-900 text-xs font-bold"
@@ -312,7 +318,6 @@ export const ProfilePage: React.FC = () => {
           Cerrar sesión
         </button>
         {pwdMsg && <p className="text-[11px] text-neutral-600">{pwdMsg}</p>}
-        {importMsg && !showImportModal && <p className="text-[11px] text-neutral-600">{importMsg}</p>}
       </div>
 
       {/* Raciones y Día Libre */}
@@ -571,10 +576,26 @@ export const ProfilePage: React.FC = () => {
 
       <ImportMenuModal
         isOpen={showImportModal}
-        onClose={() => setShowImportModal(false)}
+        onClose={() => {
+          if (importBusy) return;
+          setShowImportModal(false);
+          setImportError(null);
+          setImportSuccess(null);
+        }}
         onFile={handleImportPdf}
         busy={importBusy}
-        message={importMsg}
+        error={importError}
+        success={importSuccess}
+        onGoMenu={() => {
+          setShowImportModal(false);
+          setImportSuccess(null);
+          navigate('/menu');
+        }}
+        onGoShopping={() => {
+          setShowImportModal(false);
+          setImportSuccess(null);
+          navigate('/compra');
+        }}
       />
 
       <TutorialModal

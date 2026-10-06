@@ -6,6 +6,7 @@ import { MEAL_LABELS } from '@/domain/models/types';
 import type { MealType, WeekMenu, DayMenu } from '@/domain/models/types';
 import { HospitalGuidelinesCard } from '@/ui/components/guidelines/HospitalGuidelinesCard';
 import { assetUrl } from '@/shared/assets';
+import { formatKcalLabel } from '@/domain/services/calorieEstimateService';
 
 const MEAL_EMOJIS: Record<MealType, string> = {
   breakfast: '🌅',
@@ -169,7 +170,7 @@ export const MenuPage: React.FC = () => {
         week: activeWeek,
         profileName: activeProfile.name,
         servings,
-        kcal: activeProfile.targetCalories || 1500,
+        kcal: storageService.getMenuDisplayKcal(activeProfile.id),
       });
     } catch (err) {
       console.error(err);
@@ -377,7 +378,7 @@ export const MenuPage: React.FC = () => {
                 )}
               </div>
               <p className="text-[11px] text-neutral-500">
-                Semana {activeWeek.weekNumber} · Menú 1.500 kcal
+                Semana {activeWeek.weekNumber} · Menú {formatKcalLabel(storageService.getMenuDisplayKcal(activeProfile.id))}
               </p>
             </div>
 
@@ -415,7 +416,7 @@ export const MenuPage: React.FC = () => {
               <h3 className="font-bold text-amber-900 text-base">¡Día libre de la dieta!</h3>
               <p className="text-sm text-amber-800 leading-relaxed max-w-sm mx-auto">
                 Hoy no hay menú hospitalario. Disfruta con la familia sin contar calorías.
-                Mañana retomamos el menú de 1.500 kcal.
+                Mañana retomamos el menú de {formatKcalLabel(storageService.getMenuDisplayKcal(activeProfile.id))}.
               </p>
               <p className="text-[11px] text-amber-700/80 italic">
                 Decisión personal (no forma parte del protocolo clínico).
@@ -686,7 +687,7 @@ export const MenuPage: React.FC = () => {
             </div>
 
             <p className="text-xs text-neutral-600 mb-3">
-              Elige un cambio directo o escribe lo que te apetezca. Adaptado a tus 1.500 kcal:
+              Elige un cambio directo o escribe lo que te apetezca. Adaptado a tus {formatKcalLabel(storageService.getMenuDisplayKcal(activeProfile.id))}:
             </p>
 
             {/* Alternativas Clínicas Rápidas en 1 Toque */}

@@ -712,6 +712,7 @@ ${pdfText}
 
 Devuelve JSON exacto:
 {
+  "estimatedDailyKcal": 2200,
   "lunches": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }],
   "dinners": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }]
 }`;
@@ -729,6 +730,7 @@ Cocina española / murciana, cantidades caseras claras (g o cucharadas). Thermom
 
 JSON exacto:
 {
+  "estimatedDailyKcal": 2000,
   "lunches": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }],
   "dinners": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }]
 }`;
@@ -742,6 +744,7 @@ JSON exacto:
         ok: true,
         lunches: Array.isArray(parsed.lunches) ? parsed.lunches : [],
         dinners: Array.isArray(parsed.dinners) ? parsed.dinners : [],
+        estimatedDailyKcal: Number(parsed.estimatedDailyKcal) || null,
       });
     }
 

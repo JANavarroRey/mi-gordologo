@@ -25,6 +25,8 @@ export interface FoodIntake {
   readonly allergies: string;
   readonly notes: string;
   readonly importedFromPdf?: boolean;
+  /** Media diaria estimada del menú actual (p. ej. tras PDF), no la pauta hospitalaria. */
+  readonly estimatedDailyKcal?: number | null;
 }
 
 export interface BodyMeasurement {

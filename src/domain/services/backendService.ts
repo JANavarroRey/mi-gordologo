@@ -48,6 +48,7 @@ export type GordologoResponse = {
   measurements?: unknown;
   lunches?: Array<{ recipeName?: string; items?: Array<{ name?: string; quantity?: string; notes?: string | null }> }>;
   dinners?: Array<{ recipeName?: string; items?: Array<{ name?: string; quantity?: string; notes?: string | null }> }>;
+  estimatedDailyKcal?: number;
 };
 
 export const backendService = {

@@ -25,20 +25,27 @@ export const ShoppingPage: React.FC = () => {
   const [checkedMap, setCheckedMap] = useState<Record<string, boolean>>({});
   const [customItems, setCustomItems] = useState<{ id: string; name: string }[]>([]);
   const [newCustomText, setNewCustomText] = useState('');
+  const [menus, setMenus] = useState(() => storageService.getMenus());
+  const [menuTick, setMenuTick] = useState(0);
 
-  const menus = useMemo(() => storageService.getMenus(), [selectedWeek]);
+  useEffect(() => {
+    const sync = () => {
+      setMenus(storageService.getMenus());
+      setServings(storageService.getServings());
+      setCheckedMap(storageService.getShoppingChecked(selectedWeek));
+      setCustomItems(storageService.getCustomShoppingItems(selectedWeek));
+      setMenuTick((t) => t + 1);
+    };
+    sync();
+    window.addEventListener('storage', sync);
+    return () => window.removeEventListener('storage', sync);
+  }, [selectedWeek]);
 
   const currentPresetItems = useMemo(() => {
     const week = menus[selectedWeek - 1];
     if (!week) return [];
     return buildShoppingListFromWeek(week);
-  }, [menus, selectedWeek]);
-
-  useEffect(() => {
-    setServings(storageService.getServings());
-    setCheckedMap(storageService.getShoppingChecked(selectedWeek));
-    setCustomItems(storageService.getCustomShoppingItems(selectedWeek));
-  }, [selectedWeek]);
+  }, [menus, selectedWeek, menuTick]);
 
   const toggleCheck = (id: string) => {
     const next = { ...checkedMap, [id]: !checkedMap[id] };
