@@ -53,6 +53,12 @@ export function AppLayout() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
+  useEffect(() => {
+    if (!habitsMsg || showHabits) return;
+    const t = window.setTimeout(() => setHabitsMsg(null), 3500);
+    return () => window.clearTimeout(t);
+  }, [habitsMsg, showHabits]);
+
   const navItems = [
     { to: '/menu', icon: UtensilsCrossed, label: 'Menú' },
     { to: '/compra', icon: ShoppingCart, label: 'Lista' },

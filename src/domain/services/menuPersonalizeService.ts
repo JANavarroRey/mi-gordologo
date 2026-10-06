@@ -3,6 +3,7 @@ import { applyLunchDinnerLists, mealFromParts } from './menuAdaptService';
 import { backendService } from './backendService';
 import { extractPdfText } from './pdfTextService';
 import { storageService } from './storageService';
+import { authSyncService } from './authSyncService';
 
 type RawMeal = { recipeName?: string; items?: Array<{ name?: string; quantity?: string; notes?: string | null }> };
 
@@ -206,6 +207,7 @@ export async function personalizeFromIntake(intake: FoodIntake): Promise<string>
   const lists = await requestAdaptedMenu(intake);
   applyLists(lists.lunches, lists.dinners);
   storageService.setFoodIntake(intake);
+  await authSyncService.flushNow();
   return 'Comidas y cenas adaptadas a tus hábitos.';
 }
 
@@ -230,5 +232,6 @@ export async function importMenuFromPdf(file: File): Promise<string> {
     notes: current?.notes || '',
     importedFromPdf: true,
   });
+  await authSyncService.flushNow();
   return 'Comidas y cenas sustituidas por el PDF, sin recortar calorías. Desayunos y meriendas se mantienen.';
 }
