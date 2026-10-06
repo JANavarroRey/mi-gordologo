@@ -29,10 +29,10 @@ npm run preview
 
 La app funciona sin IA (motor de la dieta). La clave de Google **no se pega en cada móvil**.
 
-1. Monta Supabase (SQL de `supabase/schema.sql` + función `gordologo`).
+1. Monta Supabase (`supabase/schema.sql`; si el proyecto ya existía, ejecuta también `supabase/schema_users.sql`) y publica la función `gordologo`.
 2. Secrets de GitHub Pages: `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` (la anon es pública a propósito; **nunca** pongas la clave Gemini ahí).
-3. En la app: **Mi Perfil → Superadmin** → crea tu contraseña → pega la clave de [Google AI Studio](https://aistudio.google.com/apikey).
-4. Queda en el servidor. El chat y “Ajustar” la usan en todos los dispositivos.
+3. Primera vez en la app: contraseña de Pepe (mín. 8) y de María (mín. 6). Entra como Pepe y pega la clave Gemini en **Mi Perfil → Superadmin**.
+4. Queda en el servidor. Cualquier perfil logueado usa la IA. Cada usuario entra con su contraseña; Pepe puede abrir todos.
 
 ## Despliegue en GitHub Pages
 

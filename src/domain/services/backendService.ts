@@ -1,3 +1,5 @@
+const USER_TOKEN_KEY = 'migordologo_user_token';
+const AUTH_USER_KEY = 'migordologo_auth_user_id';
 const ADMIN_TOKEN_KEY = 'migordologo_admin_token';
 
 function getEnv() {
@@ -6,11 +8,27 @@ function getEnv() {
   return { url, anon };
 }
 
+export type RemoteUser = {
+  id: string;
+  name: string;
+  role?: string;
+  age?: number;
+  height?: number;
+  targetCalories?: number;
+  gender?: string | null;
+  activityLevel?: string | null;
+  goal?: string | null;
+  linkedMenuUserId?: string | null;
+  createdAt?: string;
+  settings?: Record<string, unknown>;
+};
+
 export type GordologoResponse = {
   ok: boolean;
   error?: string;
   backend?: boolean;
   hasAdmin?: boolean;
+  hasUsers?: boolean;
   hasGemini?: boolean;
   token?: string;
   text?: string;
@@ -18,12 +36,44 @@ export type GordologoResponse = {
   recipeName?: string;
   recipeUrl?: string | null;
   items?: Array<{ name: string; quantity?: string; notes?: string | null }>;
+  users?: RemoteUser[];
+  authUser?: RemoteUser;
+  actingUser?: RemoteUser;
+  actingUserId?: string;
+  user?: RemoteUser;
+  menus?: unknown;
+  menusEdited?: boolean;
+  menusUpdatedAt?: string | null;
+  measurements?: unknown;
+  measurementsUpdatedAt?: string | null;
 };
 
 export const backendService = {
   isConfigured(): boolean {
     const { url, anon } = getEnv();
     return Boolean(url && anon);
+  },
+
+  getUserToken(): string {
+    return localStorage.getItem(USER_TOKEN_KEY) || '';
+  },
+
+  setUserToken(token: string | null): void {
+    if (token) localStorage.setItem(USER_TOKEN_KEY, token);
+    else localStorage.removeItem(USER_TOKEN_KEY);
+  },
+
+  getAuthUserId(): string {
+    return localStorage.getItem(AUTH_USER_KEY) || '';
+  },
+
+  setAuthUserId(id: string | null): void {
+    if (id) localStorage.setItem(AUTH_USER_KEY, id);
+    else localStorage.removeItem(AUTH_USER_KEY);
+  },
+
+  isAuthSuperadmin(): boolean {
+    return this.getAuthUserId() === 'pepe';
   },
 
   getAdminToken(): string {
@@ -35,8 +85,12 @@ export const backendService = {
     else sessionStorage.removeItem(ADMIN_TOKEN_KEY);
   },
 
+  isLoggedIn(): boolean {
+    return Boolean(this.getUserToken());
+  },
+
   isSuperadminSession(): boolean {
-    return Boolean(this.getAdminToken());
+    return Boolean(this.getUserToken() || this.getAdminToken());
   },
 
   async call(body: Record<string, unknown>): Promise<GordologoResponse> {
@@ -49,8 +103,10 @@ export const backendService = {
       apikey: anon,
       Authorization: `Bearer ${anon}`,
     };
-    const token = this.getAdminToken();
-    if (token) headers['x-admin-token'] = token;
+    const userToken = this.getUserToken();
+    if (userToken) headers['x-user-token'] = userToken;
+    const adminToken = this.getAdminToken();
+    if (adminToken) headers['x-admin-token'] = adminToken;
 
     const res = await fetch(`${url.replace(/\/$/, '')}/functions/v1/gordologo`, {
       method: 'POST',
@@ -69,17 +125,47 @@ export const backendService = {
     return this.call({ action: 'status' });
   },
 
-  bootstrap(password: string) {
-    return this.call({ action: 'bootstrap', password });
+  bootstrapUsers(pepePassword: string, mariaPassword: string, extra?: Record<string, unknown>) {
+    return this.call({ action: 'bootstrapUsers', pepePassword, mariaPassword, ...extra });
   },
 
-  login(password: string) {
-    return this.call({ action: 'login', password });
+  login(userId: string, password: string) {
+    return this.call({ action: 'login', userId, password });
   },
 
   async logout() {
     await this.call({ action: 'logout' });
+    this.setUserToken(null);
     this.setAdminToken(null);
+    this.setAuthUserId(null);
+  },
+
+  openAsUser(targetUserId: string) {
+    return this.call({ action: 'openAsUser', targetUserId });
+  },
+
+  createUser(body: Record<string, unknown>) {
+    return this.call({ action: 'createUser', ...body });
+  },
+
+  setUserPassword(userId: string, password: string) {
+    return this.call({ action: 'setUserPassword', userId, password });
+  },
+
+  updateProfile(body: Record<string, unknown>) {
+    return this.call({ action: 'updateProfile', ...body });
+  },
+
+  getState() {
+    return this.call({ action: 'getState' });
+  },
+
+  saveMenus(weeks: unknown, userId?: string, edited = true) {
+    return this.call({ action: 'saveMenus', weeks, userId, edited });
+  },
+
+  saveMeasurements(measurements: unknown, userId?: string) {
+    return this.call({ action: 'saveMeasurements', measurements, userId });
   },
 
   setGeminiKey(apiKey: string) {

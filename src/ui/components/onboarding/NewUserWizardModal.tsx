@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
-import { X, Check, Users, UserPlus } from 'lucide-react';
+import { X, Check, UserPlus } from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
+import { backendService } from '@/domain/services/backendService';
+import { getHospitalMenuSeed } from '@/data/hospitalMenuSeed';
+import { computeTargetCalories, scaleWeekMenus } from '@/domain/services/menuScaleService';
 import type { UserProfile } from '@/domain/models/types';
 
 interface Props {
@@ -17,14 +20,22 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
   const [gender, setGender] = useState<'female' | 'male'>('female');
   const [activityLevel, setActivityLevel] = useState<'sedentary' | 'moderate' | 'active'>('moderate');
   const [goal, setGoal] = useState<'lose_weight' | 'maintain'>('lose_weight');
-  const [shareMenuWithMaria, setShareMenuWithMaria] = useState(false);
   const [weighInDay, setWeighInDay] = useState(4); // Jueves por defecto
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+    if (password.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
 
     const created = storageService.createNewProfileWithIntake({
       name: name.trim(),
@@ -34,12 +45,46 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
       gender,
       activityLevel,
       goal,
-      linkedMenuUserId: shareMenuWithMaria ? 'maria_ignacia' : null,
+      linkedMenuUserId: null,
       weighInDay,
     });
 
+    const targetCalories = computeTargetCalories({
+      age: created.age,
+      height: created.height,
+      weight: parseFloat(weight) || 75,
+      gender,
+      activityLevel,
+      goal,
+    });
+    const weeks = scaleWeekMenus(getHospitalMenuSeed(), targetCalories);
+    const measurements = storageService.getMeasurements(created.id);
+
+    const res = await backendService.createUser({
+      id: created.id,
+      name: created.name,
+      password,
+      age: created.age,
+      height: created.height,
+      targetCalories,
+      gender,
+      activityLevel,
+      goal,
+      weighInDay,
+      weeks,
+      measurements,
+    });
+    if (!res.ok) {
+      setError(res.error || 'No se pudo guardar el perfil en el servidor.');
+      setBusy(false);
+      return;
+    }
+    await backendService.openAsUser(created.id);
+    storageService.setActiveUserId(created.id);
+
     onUserCreated(created);
     onClose();
+    setBusy(false);
   };
 
   return (
@@ -226,35 +271,22 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
             <p className="text-[10px] text-neutral-500 mt-1">Recomendado: <strong>Jueves por la mañana</strong>.</p>
           </div>
 
-          {/* VINCULACIÓN DE MENÚ (COMPARTIR MENÚ FAMILIAR) */}
-          <div className="bg-emerald-50/80 rounded-2xl p-3.5 border border-emerald-200/80 space-y-2">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center space-x-2">
-                <Users className="w-4 h-4 text-emerald-700" />
-                <span className="text-xs font-bold text-emerald-900">
-                  ¿Compartir Menú con María Ignacia?
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={shareMenuWithMaria}
-                onChange={(e) => setShareMenuWithMaria(e.target.checked)}
-                className="w-4 h-4 text-emerald-600 rounded border-emerald-300 focus:ring-emerald-500 mt-0.5 cursor-pointer"
-              />
-            </div>
-
-            <p className="text-[11px] text-emerald-800 leading-relaxed">
-              {shareMenuWithMaria ? (
-                <span>
-                  ✓ <strong>Cocinaréis lo mismo:</strong> Verás y editarás los mismos platos que María Ignacia. Tu seguimiento de peso será <strong>privado</strong>.
-                </span>
-              ) : (
-                <span>
-                  ✓ <strong>Menú propio:</strong> tendrás tu plan independiente (recomendado si tus calorías o necesidades son distintas).
-                </span>
-              )}
+          <div>
+            <label className="block text-xs font-bold text-neutral-700 mb-1">Contraseña del perfil (mín. 6)</label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+            />
+            <p className="text-[10px] text-neutral-500 mt-1">
+              Cada persona entra con su clave. El menú se crea a sus kcal, independiente de María.
             </p>
           </div>
+
+          {error && <p className="text-[11px] text-rose-700">{error}</p>}
 
           <div className="flex space-x-2 pt-2 border-t border-neutral-100">
             <button
@@ -266,7 +298,8 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
             </button>
             <button
               type="submit"
-              className="flex-1 py-2.5 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 shadow-sm flex items-center justify-center space-x-1"
+              disabled={busy}
+              className="flex-1 py-2.5 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 shadow-sm flex items-center justify-center space-x-1 disabled:opacity-50"
             >
               <Check className="w-4 h-4" />
               <span>Guardar Perfil</span>

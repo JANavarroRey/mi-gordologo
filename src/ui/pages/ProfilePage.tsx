@@ -1,19 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Calendar, Heart, Bell, Share2, Link as LinkIcon, UserPlus, CheckCircle2, ShieldCheck, Cloud, ChevronDown } from 'lucide-react';
+import { Users, Calendar, Heart, Bell, Share2, UserPlus, CheckCircle2, ShieldCheck, LogOut, KeyRound, Scale } from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
-import { cloudSyncService } from '@/domain/services/cloudSyncService';
+import { backendService } from '@/domain/services/backendService';
 import { UserSelectionModal } from '@/ui/components/onboarding/UserSelectionModal';
 import { NewUserWizardModal } from '@/ui/components/onboarding/NewUserWizardModal';
 import { TutorialModal } from '@/ui/components/tutorial/TutorialModal';
-import { HospitalGuidelinesCard } from '@/ui/components/guidelines/HospitalGuidelinesCard';
 import { SuperAdminPanel } from '@/ui/components/admin/SuperAdminPanel';
+import { HospitalGuidelinesCard } from '@/ui/components/guidelines/HospitalGuidelinesCard';
 import { assetUrl } from '@/shared/assets';
 import type { UserProfile } from '@/domain/models/types';
 
 const WEEKDAY_LABELS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'] as const;
 
 export const ProfilePage: React.FC = () => {
-  const [profiles, setProfiles] = useState<UserProfile[]>(() => storageService.getProfiles());
   const [activeUser, setActiveUser] = useState<UserProfile>(() => storageService.getActiveProfile());
   const [servings, setServings] = useState(() => storageService.getServings());
   const [freeDay, setFreeDay] = useState(() => storageService.getFreeDay());
@@ -23,16 +22,14 @@ export const ProfilePage: React.FC = () => {
   const [showUserModal, setShowUserModal] = useState(false);
   const [showWizardModal, setShowWizardModal] = useState(false);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
-  const [familyKey, setFamilyKey] = useState(() => cloudSyncService.getFamilyKey());
-  const [cloudMsg, setCloudMsg] = useState<string | null>(null);
-  const [cloudBusy, setCloudBusy] = useState(false);
+  const [ownPassword, setOwnPassword] = useState('');
+  const [pwdMsg, setPwdMsg] = useState<string | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<string>(() => {
     return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
   });
 
   useEffect(() => {
     const syncFromStorage = () => {
-      setProfiles(storageService.getProfiles());
       setActiveUser(storageService.getActiveProfile());
       setServings(storageService.getServings());
       setFreeDay(storageService.getFreeDay());
@@ -73,43 +70,27 @@ export const ProfilePage: React.FC = () => {
     window.dispatchEvent(new Event('storage'));
   };
 
-  const handleLinkMenuChange = (targetUserId: string | null) => {
-    storageService.setLinkedMenuUser(activeUser.id, targetUserId);
-    const updated = storageService.getActiveProfile();
-    setActiveUser(updated);
-    setProfiles(storageService.getProfiles());
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwdMsg(null);
+    const res = await backendService.setUserPassword(activeUser.id, ownPassword);
+    if (res.ok) {
+      setOwnPassword('');
+      setPwdMsg('Contraseña actualizada.');
+    } else {
+      setPwdMsg(res.error || 'No se pudo cambiar.');
+    }
+  };
+
+  const handleRescale = () => {
+    storageService.rescaleMenusToCalories(activeUser.id);
+    setPwdMsg(`Cantidades del menú ajustadas a ${activeUser.targetCalories} kcal.`);
     window.dispatchEvent(new Event('storage'));
   };
 
-  const handleSaveFamilyKey = () => {
-    cloudSyncService.setFamilyKey(familyKey);
-    setCloudMsg('Clave familiar guardada en este móvil.');
-  };
-
-  const handleCloudPush = async () => {
-    setCloudBusy(true);
-    setCloudMsg(null);
-    cloudSyncService.setFamilyKey(familyKey);
-    const res = await cloudSyncService.push();
-    setCloudMsg(res.message);
-    setCloudBusy(false);
-  };
-
-  const handleCloudPull = async () => {
-    setCloudBusy(true);
-    setCloudMsg(null);
-    cloudSyncService.setFamilyKey(familyKey);
-    const res = await cloudSyncService.pull();
-    setCloudMsg(res.message);
-    if (res.ok) {
-      setProfiles(storageService.getProfiles());
-      setActiveUser(storageService.getActiveProfile());
-      setServings(storageService.getServings());
-      setFreeDay(storageService.getFreeDay());
-      setFreeDayEnabled(storageService.isFreeDayEnabled());
-      setWeighInDay(storageService.getWeighInDay());
-    }
-    setCloudBusy(false);
+  const handleLogout = async () => {
+    await backendService.logout();
+    window.location.reload();
   };
 
   const handleRequestNotifications = async () => {
@@ -170,10 +151,8 @@ export const ProfilePage: React.FC = () => {
     window.open(url, '_blank');
   };
 
-  const isSuperadmin = storageService.isSuperadmin(activeUser.id);
-  const linkedProfile = activeUser.linkedMenuUserId
-    ? storageService.getProfileById(activeUser.linkedMenuUserId)
-    : null;
+  const isPepeProfile = storageService.isSuperadmin(activeUser.id);
+  const canManage = backendService.isAuthSuperadmin();
 
   return (
     <div className="space-y-4">
@@ -190,13 +169,13 @@ export const ProfilePage: React.FC = () => {
               {activeUser.name}
             </h2>
             <p className="text-sm text-emerald-100 mt-0.5">
-              {isSuperadmin
+              {isPepeProfile
                 ? 'Superadmin · configuración de la familia'
                 : `${activeUser.targetCalories} kcal · ${activeUser.height} cm`}
             </p>
           </div>
         </div>
-        <div className={`relative mt-4 grid gap-2 ${isSuperadmin ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <div className={`relative mt-4 grid gap-2 ${canManage ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <button
             type="button"
             onClick={() => setShowUserModal(true)}
@@ -205,7 +184,7 @@ export const ProfilePage: React.FC = () => {
             <Users className="w-3.5 h-3.5" />
             Cambiar perfil
           </button>
-          {isSuperadmin && (
+          {canManage && (
           <button
             type="button"
             onClick={() => setShowWizardModal(true)}
@@ -225,56 +204,45 @@ export const ProfilePage: React.FC = () => {
         </button>
       </div>
 
-      {isSuperadmin && (
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-3">
         <div className="flex items-center space-x-2">
-          <LinkIcon className="w-5 h-5 text-emerald-600" />
-          <div>
-            <h3 className="font-bold text-sm text-neutral-900">Sincronización de Menú Familiar</h3>
-            <p className="text-[11px] text-neutral-500">Misma comida en casa, báscula y seguimiento independientes</p>
-          </div>
+          <KeyRound className="w-4 h-4 text-emerald-700" />
+          <h3 className="font-bold text-sm text-neutral-900">Contraseña y menú de {activeUser.name}</h3>
         </div>
-
-        <p className="text-xs text-neutral-600 leading-relaxed">
-          Permite que dos personas compartan y cocinen el <strong>mismo menú de comida</strong> (así no se cocina dos veces). Los cambios en las recetas se sincronizan entre ambos, pero el <strong>panel de peso y báscula es 100% privado</strong> para cada uno.
+        <p className="text-[11px] text-neutral-500 leading-relaxed">
+          Menú propio ({activeUser.targetCalories} kcal). Los cambios de platos se guardan en el servidor para este perfil.
         </p>
-
-        <div className="p-3.5 rounded-2xl bg-neutral-50 border border-neutral-200/80 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-neutral-800">Menú de {activeUser.name}:</span>
-            <span className="text-xs font-bold text-emerald-900 bg-emerald-100/80 px-2.5 py-0.5 rounded-full">
-              {linkedProfile ? `Compartido con ${linkedProfile.name}` : 'Menú propio e independiente'}
-            </span>
-          </div>
-
-          {profiles.length > 1 ? (
-            <div className="space-y-1.5 pt-2 border-t border-neutral-200/60">
-              <label className="block text-[11px] font-bold text-neutral-700">
-                Vincular menú con:
-              </label>
-              <select
-                value={activeUser.linkedMenuUserId || ''}
-                onChange={(e) => handleLinkMenuChange(e.target.value || null)}
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200 bg-white font-medium"
-              >
-                <option value="">Ninguno (Tener mi propio menú independiente)</option>
-                {profiles
-                  .filter((p) => p.id !== activeUser.id)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      Compartir menú con {p.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-          ) : (
-            <div className="pt-1 text-[11px] text-neutral-500 italic">
-              Actualmente solo existe el perfil de {activeUser.name}. Si tu hijo o pareja crea un perfil, podréis pulsar aquí para vincular vuestro menú.
-            </div>
-          )}
-        </div>
+        <form onSubmit={(e) => void handleChangePassword(e)} className="flex gap-2">
+          <input
+            type="password"
+            value={ownPassword}
+            onChange={(e) => setOwnPassword(e.target.value)}
+            minLength={activeUser.id === 'pepe' ? 8 : 6}
+            placeholder="Nueva contraseña"
+            className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 min-w-0"
+          />
+          <button type="submit" className="px-3 py-2 rounded-xl bg-neutral-900 text-white font-bold text-xs shrink-0">
+            Cambiar
+          </button>
+        </form>
+        <button
+          type="button"
+          onClick={handleRescale}
+          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-emerald-200 text-emerald-900 text-xs font-bold"
+        >
+          <Scale className="w-3.5 h-3.5" />
+          Reescalar cantidades a {activeUser.targetCalories} kcal
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleLogout()}
+          className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] font-bold text-neutral-500"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          Cerrar sesión
+        </button>
+        {pwdMsg && <p className="text-[11px] text-neutral-600">{pwdMsg}</p>}
       </div>
-      )}
 
       {/* Raciones y Día Libre */}
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-4">
@@ -491,61 +459,7 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {isSuperadmin && <SuperAdminPanel />}
-
-      {isSuperadmin && (
-      <details className="bg-white rounded-3xl shadow-sm border border-neutral-200 group">
-        <summary className="cursor-pointer list-none flex items-center justify-between p-4 font-bold text-sm text-neutral-800">
-          <span className="flex items-center gap-2">
-            <Cloud className="w-4 h-4 text-sky-600" />
-            Copia en la nube
-          </span>
-          <ChevronDown className="w-4 h-4 text-neutral-400 group-open:rotate-180 transition-transform" />
-        </summary>
-        <div className="px-4 pb-4 space-y-4 border-t border-neutral-100 pt-3">
-          <div className="space-y-2">
-            <p className="text-[11px] text-neutral-500 leading-relaxed">
-              Sincroniza menús entre móviles. María no necesita esto para usar la IA.
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                placeholder="Clave familiar"
-                value={familyKey}
-                onChange={(e) => setFamilyKey(e.target.value)}
-                className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 font-mono min-w-0"
-              />
-              <button
-                type="button"
-                onClick={handleSaveFamilyKey}
-                className="px-3 py-2 rounded-xl bg-neutral-100 text-neutral-800 font-bold text-xs shrink-0"
-              >
-                OK
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={cloudBusy}
-                onClick={handleCloudPush}
-                className="p-2 rounded-xl bg-sky-700 disabled:opacity-50 text-white text-xs font-bold"
-              >
-                Subir
-              </button>
-              <button
-                type="button"
-                disabled={cloudBusy}
-                onClick={handleCloudPull}
-                className="p-2 rounded-xl border border-sky-200 text-sky-900 text-xs font-bold"
-              >
-                Restaurar
-              </button>
-            </div>
-            {cloudMsg && <p className="text-[11px] text-neutral-600">{cloudMsg}</p>}
-          </div>
-        </div>
-      </details>
-      )}
+      {canManage && <SuperAdminPanel />}
 
       {/* Modales */}
       <UserSelectionModal
@@ -565,7 +479,6 @@ export const ProfilePage: React.FC = () => {
         onClose={() => setShowWizardModal(false)}
         onUserCreated={(newProfile) => {
           setActiveUser(newProfile);
-          setProfiles(storageService.getProfiles());
           window.dispatchEvent(new Event('storage'));
         }}
       />

@@ -1,28 +1,25 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, Sparkles, LogOut } from 'lucide-react';
+import { Shield, Sparkles, KeyRound } from 'lucide-react';
 import { backendService } from '@/domain/services/backendService';
+import { storageService } from '@/domain/services/storageService';
 
 export const SuperAdminPanel: React.FC = () => {
-  const [status, setStatus] = useState<{
-    backend: boolean;
-    hasAdmin: boolean;
-    hasGemini: boolean;
-  } | null>(null);
-  const [password, setPassword] = useState('');
+  const [status, setStatus] = useState<{ backend: boolean; hasGemini: boolean } | null>(null);
   const [geminiKey, setGeminiKey] = useState('');
+  const [resetUserId, setResetUserId] = useState('maria_ignacia');
+  const [resetPassword, setResetPassword] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(() => backendService.isSuperadminSession());
+  const profiles = storageService.getProfiles().filter((p) => p.id !== 'pepe');
 
   const refresh = async () => {
     if (!backendService.isConfigured()) {
-      setStatus({ backend: false, hasAdmin: false, hasGemini: false });
+      setStatus({ backend: false, hasGemini: false });
       return;
     }
     const res = await backendService.status();
     setStatus({
       backend: res.ok,
-      hasAdmin: Boolean(res.hasAdmin),
       hasGemini: Boolean(res.hasGemini),
     });
   };
@@ -31,24 +28,6 @@ export const SuperAdminPanel: React.FC = () => {
     void refresh();
   }, []);
 
-  const onBootstrapOrLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setMsg(null);
-    const action = status?.hasAdmin ? backendService.login(password) : backendService.bootstrap(password);
-    const res = await action;
-    if (res.ok && res.token) {
-      backendService.setAdminToken(res.token);
-      setLoggedIn(true);
-      setPassword('');
-      setMsg(status?.hasAdmin ? 'Sesión de superadmin abierta.' : 'Superadmin creado. Ahora pega la clave de Gemini.');
-      await refresh();
-    } else {
-      setMsg(res.error || 'No se pudo entrar.');
-    }
-    setBusy(false);
-  };
-
   const onSaveGemini = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -56,7 +35,7 @@ export const SuperAdminPanel: React.FC = () => {
     const res = await backendService.setGeminiKey(geminiKey);
     if (res.ok) {
       setGeminiKey('');
-      setMsg('Clave Gemini guardada en el servidor. Todos los móviles la usarán sin pegarla.');
+      setMsg('Clave Gemini guardada en el servidor. Todos los perfiles logueados la usarán.');
       await refresh();
     } else {
       setMsg(res.error || 'No se pudo guardar la clave.');
@@ -64,40 +43,33 @@ export const SuperAdminPanel: React.FC = () => {
     setBusy(false);
   };
 
-  const onLogout = async () => {
-    await backendService.logout();
-    setLoggedIn(false);
-    setMsg('Sesión cerrada.');
+  const onResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    const res = await backendService.setUserPassword(resetUserId, resetPassword);
+    if (res.ok) {
+      setResetPassword('');
+      setMsg('Contraseña actualizada.');
+    } else {
+      setMsg(res.error || 'No se pudo cambiar la contraseña.');
+    }
+    setBusy(false);
   };
 
   return (
     <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Shield className="w-4 h-4 text-emerald-700" />
-          <h3 className="font-bold text-sm text-neutral-900">Superadmin</h3>
-        </div>
-        {loggedIn && (
-          <button
-            type="button"
-            onClick={() => void onLogout()}
-            className="text-[11px] font-bold text-neutral-500 flex items-center gap-1"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            Salir
-          </button>
-        )}
+      <div className="flex items-center gap-2">
+        <Shield className="w-4 h-4 text-emerald-700" />
+        <h3 className="font-bold text-sm text-neutral-900">Superadmin</h3>
       </div>
       <p className="text-[11px] text-neutral-500 leading-relaxed">
-        Solo tú. Aquí se guarda <strong>una vez</strong> la clave de Gemini en el servidor. María no ve este paso ni pega claves.
+        La clave de Gemini se guarda <strong>una vez</strong> en el servidor y vale para todos los perfiles, incluidos los que crees después.
       </p>
 
       {!status?.backend && (
         <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-2.5 leading-relaxed">
-          El servidor aún no está conectado. Crea el proyecto Supabase, ejecuta <code className="bg-white px-1 rounded">supabase/schema.sql</code>,
-          publica la función <code className="bg-white px-1 rounded">gordologo</code> y añade en GitHub los secrets{' '}
-          <code className="bg-white px-1 rounded">VITE_SUPABASE_URL</code> y{' '}
-          <code className="bg-white px-1 rounded">VITE_SUPABASE_ANON_KEY</code>.
+          El servidor aún no está conectado.
         </p>
       )}
 
@@ -107,33 +79,7 @@ export const SuperAdminPanel: React.FC = () => {
         </p>
       )}
 
-      {status?.backend && !loggedIn && (
-        <form onSubmit={(e) => void onBootstrapOrLogin(e)} className="space-y-2">
-          <label className="block text-[11px] font-bold text-neutral-700">
-            {status.hasAdmin ? 'Contraseña de superadmin' : 'Crea tu contraseña de superadmin (mín. 8)'}
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={8}
-              required
-              autoComplete="current-password"
-              className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 min-w-0"
-            />
-            <button
-              type="submit"
-              disabled={busy}
-              className="px-3 py-2 rounded-xl bg-neutral-900 disabled:opacity-50 text-white font-bold text-xs shrink-0"
-            >
-              {status.hasAdmin ? 'Entrar' : 'Crear'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {status?.backend && loggedIn && (
+      {status?.backend && (
         <form onSubmit={(e) => void onSaveGemini(e)} className="space-y-2">
           <label className="flex items-center gap-1.5 text-[11px] font-bold text-neutral-700">
             <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
@@ -157,9 +103,44 @@ export const SuperAdminPanel: React.FC = () => {
               Guardar
             </button>
           </div>
-          <p className="text-[10px] text-neutral-500">
-            Se almacena en el servidor, no en el móvil de María. Consíguela en aistudio.google.com/apikey
-          </p>
+        </form>
+      )}
+
+      {status?.backend && profiles.length > 0 && (
+        <form onSubmit={(e) => void onResetPassword(e)} className="space-y-2 pt-2 border-t border-neutral-100">
+          <label className="flex items-center gap-1.5 text-[11px] font-bold text-neutral-700">
+            <KeyRound className="w-3.5 h-3.5" />
+            Resetear contraseña de un perfil
+          </label>
+          <select
+            value={resetUserId}
+            onChange={(e) => setResetUserId(e.target.value)}
+            className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+          >
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={resetPassword}
+              onChange={(e) => setResetPassword(e.target.value)}
+              minLength={6}
+              required
+              placeholder="Nueva contraseña"
+              className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 min-w-0"
+            />
+            <button
+              type="submit"
+              disabled={busy}
+              className="px-3 py-2 rounded-xl bg-neutral-900 disabled:opacity-50 text-white font-bold text-xs shrink-0"
+            >
+              OK
+            </button>
+          </div>
         </form>
       )}
 

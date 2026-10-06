@@ -2,6 +2,8 @@ import { Outlet, NavLink } from 'react-router-dom';
 import { UtensilsCrossed, TrendingUp, ShoppingCart, User, HelpCircle, ChevronDown, MessageCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { storageService } from '@/domain/services/storageService';
+import { backendService } from '@/domain/services/backendService';
+import { authSyncService } from '@/domain/services/authSyncService';
 import { UserSelectionModal } from '@/ui/components/onboarding/UserSelectionModal';
 import { TutorialModal } from '@/ui/components/tutorial/TutorialModal';
 import { WeeklyWeighInAlert } from '@/ui/components/alerts/WeeklyWeighInAlert';
@@ -12,7 +14,9 @@ import type { UserProfile } from '@/domain/models/types';
 
 export function AppLayout() {
   const [activeUser, setActiveUser] = useState<UserProfile>(() => storageService.getActiveProfile());
-  const [showUserModal, setShowUserModal] = useState(() => !storageService.hasCompletedOnboarding());
+  const [showUserModal, setShowUserModal] = useState(
+    () => !backendService.isLoggedIn() || !storageService.hasCompletedOnboarding()
+  );
   const [showTutorialModal, setShowTutorialModal] = useState(false);
   const [showChat, setShowChat] = useState(false);
 
@@ -21,6 +25,11 @@ export function AppLayout() {
       setActiveUser(storageService.getActiveProfile());
     };
     window.addEventListener('storage', handleStorageChange);
+    if (backendService.isLoggedIn()) {
+      void authSyncService.hydrateFromServer().then(() => {
+        setActiveUser(storageService.getActiveProfile());
+      });
+    }
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
@@ -119,8 +128,10 @@ export function AppLayout() {
 
       <UserSelectionModal
         isOpen={showUserModal}
-        canDismiss={storageService.hasCompletedOnboarding()}
-        onClose={() => setShowUserModal(false)}
+        canDismiss={backendService.isLoggedIn() && storageService.hasCompletedOnboarding()}
+        onClose={() => {
+          if (backendService.isLoggedIn()) setShowUserModal(false);
+        }}
         onSelectUser={(u) => {
           setActiveUser(u);
           setShowUserModal(false);

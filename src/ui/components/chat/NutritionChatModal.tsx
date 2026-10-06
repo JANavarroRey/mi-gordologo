@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Send, Sparkles, MessageCircle } from 'lucide-react';
 import { geminiService } from '@/domain/services/geminiService';
 import { backendService } from '@/domain/services/backendService';
+import { storageService } from '@/domain/services/storageService';
 
 interface Props {
   isOpen: boolean;
@@ -32,13 +33,14 @@ export const NutritionChatModal: React.FC<Props> = ({ isOpen, onClose }) => {
     void backendService.status().then((res) => {
       if (cancelled) return;
       const on = Boolean(res.hasGemini);
+      const kcal = storageService.getActiveProfile().targetCalories || 1500;
       setHasGemini(on);
       setMessages([
         {
           role: 'assistant',
           text: on
-            ? 'Soy El Gordólogo 🍋 Pregúntame lo que quieras sobre tu dieta de 1.500 kcal. Hablo claro y sin tecnicismos.'
-            : 'Soy El Gordólogo 🍋 Te ayudo con las reglas de la dieta. Cuando el superadmin active la IA, las respuestas serán más completas.',
+            ? `Soy El Gordólogo 🍋 Pregúntame lo que quieras sobre tu dieta de ${kcal} kcal. Hablo claro y sin tecnicismos.`
+            : `Soy El Gordólogo 🍋 Te ayudo con las reglas de la dieta (${kcal} kcal). Cuando el superadmin active la IA, las respuestas serán más completas.`,
         },
       ]);
     });

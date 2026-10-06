@@ -6,8 +6,12 @@ export interface UserProfile {
   readonly age: number;
   readonly height: number; // cm
   readonly targetCalories: number;
-  readonly linkedMenuUserId: string | null; // sync menú con pareja
+  readonly linkedMenuUserId: string | null;
   readonly createdAt: string;
+  readonly role?: 'superadmin' | 'member';
+  readonly gender?: 'male' | 'female' | null;
+  readonly activityLevel?: 'sedentary' | 'moderate' | 'active' | null;
+  readonly goal?: 'lose_weight' | 'maintain' | null;
 }
 
 export interface BodyMeasurement {

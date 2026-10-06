@@ -169,7 +169,7 @@ export const MenuPage: React.FC = () => {
         week: activeWeek,
         profileName: activeProfile.name,
         servings,
-        kcal: 1500,
+        kcal: activeProfile.targetCalories || 1500,
       });
     } catch (err) {
       console.error(err);

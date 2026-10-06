@@ -408,7 +408,8 @@ export const geminiService = {
     }
 
     // 4.8 Personalización libre dentro de comida/cena
-    const customTitle = userPrompt.length < 40 ? userPrompt.charAt(0).toUpperCase() + userPrompt.slice(1) : 'Plato Adaptado 1500 kcal';
+    const kcal = 1500;
+    const customTitle = userPrompt.length < 40 ? userPrompt.charAt(0).toUpperCase() + userPrompt.slice(1) : `Plato Adaptado ${kcal} kcal`;
     return {
       message: `¡Anotado por El Gordólogo! Hemos adaptado "${customTitle}" a las 1.500 kcal de tu protocolo. ✨`,
       updatedMeal: {
