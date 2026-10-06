@@ -87,12 +87,15 @@ export const SuperAdminPanel: React.FC = () => {
           </label>
           <div className="flex gap-2">
             <input
-              type="password"
+              type="text"
               value={geminiKey}
               onChange={(e) => setGeminiKey(e.target.value)}
-              placeholder="AIza…"
+              placeholder="AIza… o AQ.…"
               required
               autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              name="gordologo-gemini-key"
               className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 font-mono min-w-0"
             />
             <button
@@ -103,6 +106,9 @@ export const SuperAdminPanel: React.FC = () => {
               Guardar
             </button>
           </div>
+          <p className="text-[10px] text-neutral-500 leading-relaxed">
+            Pega solo la clave de aistudio.google.com/apikey. Las nuevas empiezan por <strong>AQ.</strong>; las antiguas por <strong>AIza</strong>. No es la contraseña de María.
+          </p>
         </form>
       )}
 

@@ -52,6 +52,18 @@ async function hashPassword(password: string, salt: Uint8Array): Promise<string>
   return b64(new Uint8Array(bits));
 }
 
+function normalizeGeminiKey(raw: string): string {
+  return String(raw || '')
+    .trim()
+    .replace(/^["']+|["']+$/g, '')
+    .replace(/\s+/g, '');
+}
+
+function isLikelyGeminiKey(apiKey: string): boolean {
+  if (apiKey.length < 20 || apiKey.length > 512) return false;
+  return apiKey.startsWith('AIza') || apiKey.startsWith('AQ.');
+}
+
 function randomToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
@@ -117,9 +129,11 @@ Reglas clínicas inquebrantables del hospital (escala las cantidades a ${kcal} k
 }
 
 async function callGemini(apiKey: string, userText: string, jsonMode: boolean, profile?: { name?: string; age?: number; targetCalories?: number }): Promise<string> {
-  const url =
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' +
-    encodeURIComponent(apiKey);
+  const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  const isAuthKey = apiKey.startsWith('AQ.');
+  const url = isAuthKey ? endpoint : `${endpoint}?key=${encodeURIComponent(apiKey)}`;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (isAuthKey) headers['x-goog-api-key'] = apiKey;
   const body: Record<string, unknown> = {
     system_instruction: { parts: [{ text: systemInstruction(profile) }] },
     contents: [{ role: 'user', parts: [{ text: userText }] }],
@@ -129,7 +143,7 @@ async function callGemini(apiKey: string, userText: string, jsonMode: boolean, p
   }
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
   const raw = await res.json();
@@ -522,9 +536,12 @@ Deno.serve(async (req) => {
       const pepeOk = session?.auth.role === 'superadmin';
       const legacyOk = await requireAdminLegacy(sb, adminToken);
       if (!pepeOk && !legacyOk) return json({ ok: false, error: 'Sesión de superadmin no válida.' }, 401);
-      const apiKey = String(payload.apiKey || '').trim();
-      if (!apiKey.startsWith('AIza') || apiKey.length < 20) {
-        return json({ ok: false, error: 'Esa no parece una clave de Google AI Studio (AIza…).' }, 400);
+      const apiKey = normalizeGeminiKey(String(payload.apiKey || ''));
+      if (!isLikelyGeminiKey(apiKey)) {
+        return json({
+          ok: false,
+          error: 'Esa no parece una clave de Google AI Studio. Debe empezar por AIza o por AQ. (las nuevas). No uses la contraseña de María en ese campo.',
+        }, 400);
       }
       await ensureAdminRow(sb);
       const { error } = await sb
