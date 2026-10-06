@@ -1,27 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, Sparkles, KeyRound } from 'lucide-react';
+import { Shield, Sparkles, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { backendService } from '@/domain/services/backendService';
-import { storageService } from '@/domain/services/storageService';
+import type { RemoteUser } from '@/domain/services/backendService';
 
 export const SuperAdminPanel: React.FC = () => {
   const [status, setStatus] = useState<{ backend: boolean; hasGemini: boolean } | null>(null);
   const [geminiKey, setGeminiKey] = useState('');
-  const [resetUserId, setResetUserId] = useState('maria_ignacia');
-  const [resetPassword, setResetPassword] = useState('');
+  const [users, setUsers] = useState<RemoteUser[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const profiles = storageService.getProfiles().filter((p) => p.id !== 'pepe');
 
   const refresh = async () => {
     if (!backendService.isConfigured()) {
       setStatus({ backend: false, hasGemini: false });
       return;
     }
-    const res = await backendService.status();
+    const [st, state] = await Promise.all([backendService.status(), backendService.getState()]);
     setStatus({
-      backend: res.ok,
-      hasGemini: Boolean(res.hasGemini),
+      backend: st.ok,
+      hasGemini: Boolean(st.hasGemini || state.hasGemini),
     });
+    if (state.ok && state.users?.length) {
+      setUsers(state.users);
+    }
   };
 
   useEffect(() => {
@@ -43,14 +46,20 @@ export const SuperAdminPanel: React.FC = () => {
     setBusy(false);
   };
 
-  const onResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSavePassword = async (userId: string) => {
+    const next = (drafts[userId] || '').trim();
+    const minLen = userId === 'pepe' ? 8 : 6;
+    if (next.length < minLen) {
+      setMsg(`La contraseña de ese perfil debe tener al menos ${minLen} caracteres.`);
+      return;
+    }
     setBusy(true);
     setMsg(null);
-    const res = await backendService.setUserPassword(resetUserId, resetPassword);
+    const res = await backendService.setUserPassword(userId, next);
     if (res.ok) {
-      setResetPassword('');
-      setMsg('Contraseña actualizada.');
+      setDrafts((d) => ({ ...d, [userId]: '' }));
+      setMsg('Contraseña guardada. Ya puedes verla en esta lista.');
+      await refresh();
     } else {
       setMsg(res.error || 'No se pudo cambiar la contraseña.');
     }
@@ -112,42 +121,66 @@ export const SuperAdminPanel: React.FC = () => {
         </form>
       )}
 
-      {status?.backend && profiles.length > 0 && (
-        <form onSubmit={(e) => void onResetPassword(e)} className="space-y-2 pt-2 border-t border-neutral-100">
+      {status?.backend && (
+        <div className="space-y-2 pt-2 border-t border-neutral-100">
           <label className="flex items-center gap-1.5 text-[11px] font-bold text-neutral-700">
             <KeyRound className="w-3.5 h-3.5" />
-            Resetear contraseña de un perfil
+            Contraseñas de la familia
           </label>
-          <select
-            value={resetUserId}
-            onChange={(e) => setResetUserId(e.target.value)}
-            className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
-          >
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={resetPassword}
-              onChange={(e) => setResetPassword(e.target.value)}
-              minLength={6}
-              required
-              placeholder="Nueva contraseña"
-              className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 min-w-0"
-            />
-            <button
-              type="submit"
-              disabled={busy}
-              className="px-3 py-2 rounded-xl bg-neutral-900 disabled:opacity-50 text-white font-bold text-xs shrink-0"
-            >
-              OK
-            </button>
-          </div>
-        </form>
+          <p className="text-[10px] text-neutral-500 leading-relaxed">
+            Solo las ves tú. Si pone «sin recordar», entra una vez con ese perfil o escribe aquí una nueva.
+          </p>
+          <ul className="space-y-2">
+            {users.map((u) => {
+              const shown = Boolean(visible[u.id]);
+              const remembered = u.passwordRecovery || '';
+              return (
+                <li key={u.id} className="rounded-2xl border border-neutral-200 p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold text-neutral-900 truncate">{u.name}</p>
+                    <span className="text-[10px] text-neutral-400 shrink-0">{u.role === 'superadmin' ? 'Admin' : 'Perfil'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type={shown ? 'text' : 'password'}
+                      readOnly
+                      value={remembered}
+                      placeholder="Sin recordar"
+                      className="flex-1 text-xs p-2 rounded-xl border border-neutral-200 bg-neutral-50 min-w-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setVisible((v) => ({ ...v, [u.id]: !shown }))}
+                      className="h-9 w-9 rounded-xl border border-neutral-200 flex items-center justify-center text-neutral-600"
+                      aria-label={shown ? 'Ocultar' : 'Mostrar'}
+                    >
+                      {shown ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={drafts[u.id] || ''}
+                      onChange={(e) => setDrafts((d) => ({ ...d, [u.id]: e.target.value }))}
+                      minLength={u.id === 'pepe' ? 8 : 6}
+                      placeholder={u.id === 'pepe' ? 'Nueva (mín. 8)' : 'Nueva (mín. 6)'}
+                      autoComplete="off"
+                      className="flex-1 text-xs p-2 rounded-xl border border-neutral-200 min-w-0"
+                    />
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void onSavePassword(u.id)}
+                      className="px-3 py-2 rounded-xl bg-neutral-900 disabled:opacity-50 text-white font-bold text-xs shrink-0"
+                    >
+                      Cambiar
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       {msg && <p className="text-[11px] text-neutral-700 leading-relaxed">{msg}</p>}

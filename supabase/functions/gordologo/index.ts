@@ -91,7 +91,10 @@ type UserRow = {
   created_at: string;
 };
 
-function publicUser(row: UserRow) {
+function publicUser(row: UserRow, withRecovery = false) {
+  const rawSettings = { ...(row.settings || {}) };
+  const recovery = typeof rawSettings.passwordRecovery === 'string' ? String(rawSettings.passwordRecovery) : '';
+  delete rawSettings.passwordRecovery;
   return {
     id: row.id,
     name: row.name,
@@ -104,7 +107,8 @@ function publicUser(row: UserRow) {
     goal: row.goal,
     linkedMenuUserId: null,
     createdAt: row.created_at,
-    settings: row.settings || {},
+    settings: rawSettings,
+    passwordRecovery: withRecovery && recovery ? recovery : undefined,
   };
 }
 
@@ -257,9 +261,9 @@ async function issueSession(
   return token;
 }
 
-async function listUsers(sb: ReturnType<typeof serviceClient>) {
+async function listUsers(sb: ReturnType<typeof serviceClient>, withRecovery = false) {
   const { data } = await sb.from('app_users').select('*').order('created_at');
-  return (data || []).map((row) => publicUser(row as UserRow));
+  return (data || []).map((row) => publicUser(row as UserRow, withRecovery));
 }
 
 async function ensureAdminRow(sb: ReturnType<typeof serviceClient>) {
@@ -345,7 +349,7 @@ Deno.serve(async (req) => {
         age: 0,
         height: 0,
         target_calories: 1500,
-        settings: { servings: 1, freeDay: 5, freeDayEnabled: false, weighInDay: 4 },
+        settings: { servings: 1, freeDay: 5, freeDayEnabled: false, weighInDay: 4, passwordRecovery: pepePassword },
         created_at: now,
       });
       if (pepeErr) return json({ ok: false, error: pepeErr.message }, 500);
@@ -360,7 +364,7 @@ Deno.serve(async (req) => {
         gender: 'female',
         activity_level: 'sedentary',
         goal: 'lose_weight',
-        settings: { servings: 2, freeDay: 5, freeDayEnabled: false, weighInDay: 4 },
+        settings: { servings: 2, freeDay: 5, freeDayEnabled: false, weighInDay: 4, passwordRecovery: mariaPassword },
         created_at: '2026-09-10T10:00:00Z',
       });
       if (mariaErr) return json({ ok: false, error: mariaErr.message }, 500);
@@ -394,7 +398,7 @@ Deno.serve(async (req) => {
         hasGemini: Boolean(admin?.gemini_api_key),
         authUser: { id: 'pepe', name: 'Pepe', role: 'superadmin' },
         actingUserId: 'pepe',
-        users: await listUsers(sb),
+        users: await listUsers(sb, true),
       });
     }
 
@@ -413,14 +417,17 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: 'Contraseña incorrecta.' }, 401);
       }
       const token = await issueSession(sb, data.id, data.id);
+      const remembered = { ...((data.settings as Record<string, unknown>) || {}), passwordRecovery: password };
+      await sb.from('app_users').update({ settings: remembered }).eq('id', data.id);
       const { data: admin } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
+      const isAdmin = data.role === 'superadmin';
       return json({
         ok: true,
         token,
         hasGemini: Boolean(admin?.gemini_api_key),
-        authUser: publicUser(data as UserRow),
+        authUser: publicUser({ ...(data as UserRow), settings: remembered }, isAdmin),
         actingUserId: data.id,
-        users: data.role === 'superadmin' ? await listUsers(sb) : [publicUser(data as UserRow)],
+        users: isAdmin ? await listUsers(sb, true) : [publicUser({ ...(data as UserRow), settings: remembered })],
       });
     }
 
@@ -475,6 +482,7 @@ Deno.serve(async (req) => {
           freeDay: 5,
           freeDayEnabled: false,
           weighInDay: Number(payload.weighInDay) || 4,
+          passwordRecovery: password,
         },
         created_at: now,
       };
@@ -510,7 +518,12 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: 'No puedes cambiar la clave de otra persona.' }, 403);
       }
       const pw = await makePassword(password);
-      const { error } = await sb.from('app_users').update({ ...pw, updated_at: new Date().toISOString() }).eq('id', targetId);
+      const { data: target } = await sb.from('app_users').select('settings').eq('id', targetId).maybeSingle();
+      const settings = { ...((target?.settings as Record<string, unknown>) || {}), passwordRecovery: password };
+      const { error } = await sb
+        .from('app_users')
+        .update({ ...pw, settings, updated_at: new Date().toISOString() })
+        .eq('id', targetId);
       if (error) return json({ ok: false, error: error.message }, 500);
       return json({ ok: true });
     }
@@ -529,8 +542,11 @@ Deno.serve(async (req) => {
       if (payload.activityLevel !== undefined) patch.activity_level = payload.activityLevel;
       if (payload.goal !== undefined) patch.goal = payload.goal;
       if (payload.settings && typeof payload.settings === 'object') {
-        const current = (session.acting.id === targetId ? session.acting.settings : {}) || {};
-        patch.settings = { ...current, ...(payload.settings as object) };
+        const { data: targetRow } = await sb.from('app_users').select('settings').eq('id', targetId).maybeSingle();
+        const current = (targetRow?.settings as Record<string, unknown>) || {};
+        const incoming = { ...(payload.settings as Record<string, unknown>) };
+        delete incoming.passwordRecovery;
+        patch.settings = { ...current, ...incoming };
       }
       const { error } = await sb.from('app_users').update(patch).eq('id', targetId);
       if (error) return json({ ok: false, error: error.message }, 500);
@@ -547,9 +563,9 @@ Deno.serve(async (req) => {
       return json({
         ok: true,
         hasGemini: Boolean(admin?.gemini_api_key),
-        authUser: publicUser(session.auth),
+        authUser: publicUser(session.auth, session.auth.role === 'superadmin'),
         actingUser: publicUser(session.acting),
-        users: session.auth.role === 'superadmin' ? await listUsers(sb) : [publicUser(session.auth)],
+        users: session.auth.role === 'superadmin' ? await listUsers(sb, true) : [publicUser(session.auth)],
         menus: menus?.weeks ?? null,
         menusEdited: Boolean(menus?.edited),
         menusUpdatedAt: menus?.updated_at ?? null,

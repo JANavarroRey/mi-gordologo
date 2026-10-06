@@ -21,6 +21,7 @@ export type RemoteUser = {
   linkedMenuUserId?: string | null;
   createdAt?: string;
   settings?: Record<string, unknown>;
+  passwordRecovery?: string;
 };
 
 export type GordologoResponse = {
