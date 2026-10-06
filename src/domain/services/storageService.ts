@@ -16,7 +16,8 @@ const STORAGE_KEYS = {
   SEED_VERSION: 'migordologo_seed_version',
 };
 
-// Perfil inicial por defecto: Únicamente María Ignacia
+export const SUPERADMIN_PROFILE_ID = 'pepe';
+
 export const DEFAULT_PROFILES: UserProfile[] = [
   {
     id: 'maria_ignacia',
@@ -27,7 +28,30 @@ export const DEFAULT_PROFILES: UserProfile[] = [
     linkedMenuUserId: null,
     createdAt: '2026-09-10T10:00:00Z',
   },
+  {
+    id: SUPERADMIN_PROFILE_ID,
+    name: 'Pepe',
+    age: 0,
+    height: 0,
+    targetCalories: 1500,
+    linkedMenuUserId: 'maria_ignacia',
+    createdAt: '2026-10-06T10:00:00Z',
+  },
 ];
+
+function ensureBuiltinProfiles(profiles: UserProfile[]): UserProfile[] {
+  const hasMaria = profiles.some((p) => p.id === 'maria_ignacia');
+  const hasPepe = profiles.some((p) => p.id === SUPERADMIN_PROFILE_ID);
+  const next = [...profiles];
+  if (!hasMaria) {
+    next.unshift(DEFAULT_PROFILES[0]);
+  }
+  if (!hasPepe) {
+    const pepe = DEFAULT_PROFILES.find((p) => p.id === SUPERADMIN_PROFILE_ID);
+    if (pepe) next.push(pepe);
+  }
+  return next;
+}
 
 // Mediciones reales extraídas del informe clínico del Hospital Morales Meseguer
 export const INITIAL_MEASUREMENTS: BodyMeasurement[] = [
@@ -100,7 +124,11 @@ export const storageService = {
     try {
       const parsed: UserProfile[] = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        const withBuiltins = ensureBuiltinProfiles(parsed);
+        if (withBuiltins.length !== parsed.length) {
+          localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(withBuiltins));
+        }
+        return withBuiltins;
       }
       localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(DEFAULT_PROFILES));
       return DEFAULT_PROFILES;
@@ -126,6 +154,11 @@ export const storageService = {
     const profiles = this.getProfiles();
     const activeId = this.getActiveUserId();
     return profiles.find((p) => p.id === activeId) || profiles[0];
+  },
+
+  isSuperadmin(userId?: string): boolean {
+    const id = userId || this.getActiveUserId();
+    return id === SUPERADMIN_PROFILE_ID;
   },
 
   updateProfile(updated: UserProfile): void {

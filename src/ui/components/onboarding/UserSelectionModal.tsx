@@ -57,6 +57,7 @@ export const UserSelectionModal: React.FC<Props> = ({
         <div className="space-y-2 mb-4">
           {profiles.map((p) => {
             const isMaria = p.id === 'maria_ignacia';
+            const isPepe = p.id === 'pepe';
             return (
               <button
                 key={p.id}
@@ -64,23 +65,29 @@ export const UserSelectionModal: React.FC<Props> = ({
                 className={`w-full flex items-center justify-between p-3 rounded-2xl border transition-all text-left group ${
                   isMaria
                     ? 'bg-emerald-50/70 border-emerald-300 hover:border-emerald-500 shadow-2xs'
+                    : isPepe
+                    ? 'bg-neutral-800 border-neutral-700 hover:border-neutral-500 text-white'
                     : 'bg-neutral-50/80 border-neutral-200 hover:border-neutral-300 hover:bg-neutral-100'
                 }`}
               >
                 <div className="flex items-center space-x-3">
                   <div
                     className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shadow-2xs ${
-                      isMaria ? 'bg-emerald-700 text-white' : 'bg-neutral-200 text-neutral-700'
+                      isMaria ? 'bg-emerald-700 text-white' : isPepe ? 'bg-white text-neutral-900' : 'bg-neutral-200 text-neutral-700'
                     }`}
                   >
                     {p.name.charAt(0)}
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-neutral-900 group-hover:text-emerald-700 transition-colors">
+                    <h4 className={`font-bold text-sm transition-colors ${isPepe ? 'text-white' : 'text-neutral-900 group-hover:text-emerald-700'}`}>
                       {p.name}
                     </h4>
-                    <p className="text-[11px] text-neutral-500">
-                      {isMaria ? 'Plan Morales Meseguer (1.500 kcal)' : `${p.age} años · Objetivo: ${p.targetCalories} kcal`}
+                    <p className={`text-[11px] ${isPepe ? 'text-neutral-300' : 'text-neutral-500'}`}>
+                      {isMaria
+                        ? 'Plan Morales Meseguer (1.500 kcal)'
+                        : isPepe
+                        ? 'Superadmin'
+                        : `${p.age} años · Objetivo: ${p.targetCalories} kcal`}
                     </p>
                   </div>
                 </div>
@@ -89,7 +96,7 @@ export const UserSelectionModal: React.FC<Props> = ({
             );
           })}
 
-          {/* Botón para crear nuevo perfil mediante el Asistente de Toma de Datos */}
+          {storageService.isSuperadmin() && (
           <button
             onClick={() => setShowWizard(true)}
             className="w-full flex items-center justify-center space-x-2 p-3 rounded-2xl border border-dashed border-neutral-300 text-neutral-600 hover:text-emerald-700 hover:border-emerald-400 hover:bg-emerald-50/40 text-xs font-semibold transition-all mt-2"
@@ -97,6 +104,7 @@ export const UserSelectionModal: React.FC<Props> = ({
             <Plus className="w-4 h-4 text-emerald-600" />
             <span>Crear nuevo usuario con cuestionario</span>
           </button>
+          )}
         </div>
 
         {canDismiss && onClose && (

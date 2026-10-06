@@ -165,6 +165,7 @@ export const ProfilePage: React.FC = () => {
     window.open(url, '_blank');
   };
 
+  const isSuperadmin = storageService.isSuperadmin(activeUser.id);
   const linkedProfile = activeUser.linkedMenuUserId
     ? storageService.getProfileById(activeUser.linkedMenuUserId)
     : null;
@@ -184,11 +185,13 @@ export const ProfilePage: React.FC = () => {
               {activeUser.name}
             </h2>
             <p className="text-sm text-emerald-100 mt-0.5">
-              {activeUser.targetCalories} kcal · {activeUser.height} cm
+              {isSuperadmin
+                ? 'Superadmin · configuración de la familia'
+                : `${activeUser.targetCalories} kcal · ${activeUser.height} cm`}
             </p>
           </div>
         </div>
-        <div className="relative mt-4 grid grid-cols-2 gap-2">
+        <div className={`relative mt-4 grid gap-2 ${isSuperadmin ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <button
             type="button"
             onClick={() => setShowUserModal(true)}
@@ -197,6 +200,7 @@ export const ProfilePage: React.FC = () => {
             <Users className="w-3.5 h-3.5" />
             Cambiar perfil
           </button>
+          {isSuperadmin && (
           <button
             type="button"
             onClick={() => setShowWizardModal(true)}
@@ -205,6 +209,7 @@ export const ProfilePage: React.FC = () => {
             <UserPlus className="w-3.5 h-3.5" />
             Nuevo perfil
           </button>
+          )}
         </div>
         <button
           type="button"
@@ -215,7 +220,7 @@ export const ProfilePage: React.FC = () => {
         </button>
       </div>
 
-      {/* Sincronización y Compartición de Menú */}
+      {isSuperadmin && (
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-3">
         <div className="flex items-center space-x-2">
           <LinkIcon className="w-5 h-5 text-emerald-600" />
@@ -264,6 +269,7 @@ export const ProfilePage: React.FC = () => {
           )}
         </div>
       </div>
+      )}
 
       {/* Raciones y Día Libre */}
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-4">
@@ -480,9 +486,9 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      <SuperAdminPanel />
+      {isSuperadmin && <SuperAdminPanel />}
 
-      {/* Ajustes técnicos: colapsados */}
+      {isSuperadmin && (
       <details className="bg-white rounded-3xl shadow-sm border border-neutral-200 group">
         <summary className="cursor-pointer list-none flex items-center justify-between p-4 font-bold text-sm text-neutral-800">
           <span className="flex items-center gap-2">
@@ -534,6 +540,7 @@ export const ProfilePage: React.FC = () => {
           </div>
         </div>
       </details>
+      )}
 
       {/* Modales */}
       <UserSelectionModal
