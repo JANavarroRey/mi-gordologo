@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Send, Sparkles, MessageCircle } from 'lucide-react';
 import { geminiService } from '@/domain/services/geminiService';
 import { backendService } from '@/domain/services/backendService';
@@ -26,6 +26,9 @@ export const NutritionChatModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [keyboardPad, setKeyboardPad] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -49,6 +52,26 @@ export const NutritionChatModal: React.FC<Props> = ({ isOpen, onClose }) => {
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const sync = () => {
+      const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKeyboardPad(covered);
+    };
+    sync();
+    vv.addEventListener('resize', sync);
+    vv.addEventListener('scroll', sync);
+    return () => {
+      vv.removeEventListener('resize', sync);
+      vv.removeEventListener('scroll', sync);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages, loading, keyboardPad]);
+
   if (!isOpen) return null;
 
   const ask = async (question: string) => {
@@ -71,9 +94,12 @@ export const NutritionChatModal: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl shadow-2xl flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ paddingBottom: keyboardPad }}
+    >
+      <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl shadow-2xl flex flex-col h-[min(92dvh,720px)] max-h-[92dvh]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100 shrink-0">
           <div className="flex items-center space-x-2">
             <MessageCircle className="w-5 h-5 text-emerald-700" />
             <div>
@@ -86,7 +112,7 @@ export const NutritionChatModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[280px]">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
           {messages.map((m, i) => (
             <div
               key={`${m.role}-${i}`}
@@ -98,9 +124,10 @@ export const NutritionChatModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
           ))}
           {loading && <p className="text-xs text-neutral-400">El Gordólogo está pensando…</p>}
+          <div ref={bottomRef} />
         </div>
 
-        <div className="px-3 pb-2 flex flex-wrap gap-1.5">
+        <div className="px-3 pb-2 flex flex-wrap gap-1.5 shrink-0">
           {QUICK_QUESTIONS.map((q) => (
             <button
               key={q}
@@ -114,17 +141,24 @@ export const NutritionChatModal: React.FC<Props> = ({ isOpen, onClose }) => {
         </div>
 
         <form
-          className="p-3 border-t border-neutral-100 flex gap-2"
+          className="p-3 border-t border-neutral-100 flex gap-2 shrink-0 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom))]"
           onSubmit={(e) => {
             e.preventDefault();
             void ask(input);
           }}
         >
           <input
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onFocus={() => {
+              window.setTimeout(() => inputRef.current?.scrollIntoView({ block: 'nearest' }), 300);
+            }}
             placeholder="Escribe tu duda…"
-            className="flex-1 text-sm p-2.5 rounded-xl border border-neutral-200 min-w-0"
+            enterKeyHint="send"
+            autoComplete="off"
+            className="flex-1 text-base text-neutral-900 bg-white caret-emerald-700 p-2.5 rounded-xl border border-neutral-200 min-w-0"
+            style={{ WebkitTextFillColor: '#171717', fontSize: 16 }}
           />
           <button
             type="submit"

@@ -129,11 +129,8 @@ Reglas clínicas inquebrantables del hospital (escala las cantidades a ${kcal} k
 }
 
 async function callGemini(apiKey: string, userText: string, jsonMode: boolean, profile?: { name?: string; age?: number; targetCalories?: number }): Promise<string> {
-  const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  const models = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-flash-latest'];
   const isAuthKey = apiKey.startsWith('AQ.');
-  const url = isAuthKey ? endpoint : `${endpoint}?key=${encodeURIComponent(apiKey)}`;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (isAuthKey) headers['x-goog-api-key'] = apiKey;
   const body: Record<string, unknown> = {
     system_instruction: { parts: [{ text: systemInstruction(profile) }] },
     contents: [{ role: 'user', parts: [{ text: userText }] }],
@@ -141,18 +138,27 @@ async function callGemini(apiKey: string, userText: string, jsonMode: boolean, p
   if (jsonMode) {
     body.generationConfig = { responseMimeType: 'application/json' };
   }
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
-  const raw = await res.json();
-  if (!res.ok) {
-    const msg = raw?.error?.message || `Gemini HTTP ${res.status}`;
-    throw new Error(msg);
+
+  let lastError = 'Gemini no respondió';
+  for (const model of models) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const url = isAuthKey ? endpoint : `${endpoint}?key=${encodeURIComponent(apiKey)}`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (isAuthKey) headers['x-goog-api-key'] = apiKey;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+    const raw = await res.json();
+    if (!res.ok) {
+      lastError = raw?.error?.message || `Gemini HTTP ${res.status}`;
+      continue;
+    }
+    const text = raw?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || '';
+    return String(text).trim();
   }
-  const text = raw?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || '';
-  return String(text).trim();
+  throw new Error(lastError);
 }
 
 async function requireAdminLegacy(sb: ReturnType<typeof serviceClient>, token: string | null) {
