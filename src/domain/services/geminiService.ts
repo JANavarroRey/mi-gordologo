@@ -79,7 +79,7 @@ export const geminiService = {
   fallbackNutritionAnswer(question: string): string {
     const q = question.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (/whisky|whiskey|ron|ginebra|vodka|copa|combinado|cuba libre|calimocho|cerveza|alcohol|vino|licor|chupito/.test(q)) {
-      return '🚫 En tu dieta de 1.500 kcal el alcohol está prohibido (whisky, vino, cerveza… también la sin alcohol). Un whisky con Coca-Cola puede sumar ~150–250 kcal vacías y sabotea el objetivo. Mejor: agua con gas y limón, o infusión. ¡Tu báscula te lo agradece! 🍋';
+      return 'En esta pauta el alcohol no entra: ni whisky, ni vino, ni cerveza (tampoco la 0,0). Un whisky-cola son unas 200 kcal vacías. Mejor agua con gas y limón, o una infusión.';
     }
     if (/caloria|kcal|cuantas|cuantos/.test(q) && /coca|refresco|boll|pan|chocolate|helado/.test(q)) {
       return '📊 Orientativo: refresco de cola ~140 kcal/lata; croissant ~230; onza de chocolate ~70. Evita calorías vacías y céntrate en el menú. Antojo → yogur 0% o fruta del grupo correcto.';

@@ -42,8 +42,8 @@ export const NutritionChatModal: React.FC<Props> = ({ isOpen, onClose }) => {
         {
           role: 'assistant',
           text: on
-            ? `Soy El Gordólogo 🍋 Pregúntame lo que quieras sobre tu dieta de ${kcal} kcal. Hablo claro y sin tecnicismos.`
-            : `Soy El Gordólogo 🍋 Te ayudo con las reglas de la dieta (${kcal} kcal). Cuando el superadmin active la IA, las respuestas serán más completas.`,
+            ? `El Gordólogo. Pregunta lo que quieras sobre tu dieta de ${kcal} kcal: claro, sin tecnicismos y sin teatro.`
+            : `El Gordólogo. Te oriento con las reglas de la dieta (${kcal} kcal). Cuando esté la IA, las respuestas serán más precisas.`,
         },
       ]);
     });
@@ -123,7 +123,7 @@ export const NutritionChatModal: React.FC<Props> = ({ isOpen, onClose }) => {
               {m.text}
             </div>
           ))}
-          {loading && <p className="text-xs text-neutral-400">El Gordólogo está pensando…</p>}
+          {loading && <p className="text-xs text-neutral-400">Un momento…</p>}
           <div ref={bottomRef} />
         </div>
 
