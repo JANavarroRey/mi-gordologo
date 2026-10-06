@@ -41,15 +41,14 @@ export const geminiService = {
           const offline = this.fallbackAdjustment(mealType, currentMeal, userPrompt);
           return {
             ...offline,
-            message: `⚠️ Gemini no respondió (${String(res.error).slice(0, 80)}). Usé el motor del hospital: ${offline.message}`,
+            message: `La IA está saturada. He usado el menú del hospital: ${offline.message}`,
           };
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+      } catch {
         const offline = this.fallbackAdjustment(mealType, currentMeal, userPrompt);
         return {
           ...offline,
-          message: `⚠️ Gemini no respondió (${msg.slice(0, 80)}). Usé el motor del hospital: ${offline.message}`,
+          message: `La IA está saturada. He usado el menú del hospital: ${offline.message}`,
         };
       }
     }
@@ -66,11 +65,10 @@ export const geminiService = {
         const res = await backendService.call({ action: 'ask', question });
         if (res.ok && res.text) return res.text;
         if (res.error && res.error !== 'NO_GEMINI_KEY') {
-          return `⚠️ No pude hablar con Gemini (${String(res.error).slice(0, 100)}).\n\n${this.fallbackNutritionAnswer(question)}`;
+          return this.fallbackNutritionAnswer(question);
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return `⚠️ No pude hablar con Gemini (${msg.slice(0, 100)}).\n\n${this.fallbackNutritionAnswer(question)}`;
+      } catch {
+        return this.fallbackNutritionAnswer(question);
       }
     }
     return this.fallbackNutritionAnswer(question);

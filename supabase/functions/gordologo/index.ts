@@ -135,8 +135,38 @@ Reglas clínicas (escala cantidades a ${kcal} kcal respecto a 1.500):
 9. Responde siempre en español.`;
 }
 
-async function callGemini(apiKey: string, userText: string, jsonMode: boolean, profile?: { name?: string; age?: number; targetCalories?: number }): Promise<string> {
-  const models = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-flash-latest'];
+function isRetryableGeminiStatus(status: number, message: string): boolean {
+  const m = message.toLowerCase();
+  if (status === 429 || status === 503 || status === 500) return true;
+  return /high demand|unavailable|overload|resource exhausted|try again|no longer available|not found|not supported/i.test(m);
+}
+
+async function callGemini(
+  apiKey: string,
+  userText: string,
+  jsonMode: boolean,
+  profile?: { name?: string; age?: number; targetCalories?: number }
+): Promise<string> {
+  const models = jsonMode
+    ? [
+        'gemini-3.5-flash',
+        'gemini-3.6-flash',
+        'gemini-3.8-flash',
+        'gemini-3.1-flash-lite',
+        'gemini-3.5-flash-lite',
+        'gemini-2.5-flash',
+        'gemini-flash-latest',
+      ]
+    : [
+        'gemini-3.1-flash-lite',
+        'gemini-3.5-flash-lite',
+        'gemini-3.8-flash',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-2.5-flash',
+        'gemini-flash-latest',
+      ];
   const isAuthKey = apiKey.startsWith('AQ.');
   const body: Record<string, unknown> = {
     system_instruction: { parts: [{ text: systemInstruction(profile) }] },
@@ -146,26 +176,30 @@ async function callGemini(apiKey: string, userText: string, jsonMode: boolean, p
     body.generationConfig = { responseMimeType: 'application/json' };
   }
 
-  let lastError = 'Gemini no respondió';
   for (const model of models) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     const url = isAuthKey ? endpoint : `${endpoint}?key=${encodeURIComponent(apiKey)}`;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (isAuthKey) headers['x-goog-api-key'] = apiKey;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
-    const raw = await res.json();
-    if (!res.ok) {
-      lastError = raw?.error?.message || `Gemini HTTP ${res.status}`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      const raw = await res.json();
+      if (!res.ok) {
+        const msg = String(raw?.error?.message || `HTTP ${res.status}`);
+        if (isRetryableGeminiStatus(res.status, msg)) continue;
+        continue;
+      }
+      const text = raw?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || '';
+      if (text.trim()) return String(text).trim();
+    } catch {
       continue;
     }
-    const text = raw?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || '';
-    return String(text).trim();
   }
-  throw new Error(lastError);
+  throw new Error('IA_SATURADA');
 }
 
 async function requireAdminLegacy(sb: ReturnType<typeof serviceClient>, token: string | null) {
