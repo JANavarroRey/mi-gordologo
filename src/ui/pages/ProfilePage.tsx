@@ -152,7 +152,6 @@ export const ProfilePage: React.FC = () => {
   };
 
   const isPepeProfile = storageService.isSuperadmin(activeUser.id);
-  const canManage = backendService.isAuthSuperadmin();
 
   return (
     <div className="space-y-4">
@@ -175,7 +174,7 @@ export const ProfilePage: React.FC = () => {
             </p>
           </div>
         </div>
-        <div className={`relative mt-4 grid gap-2 ${canManage ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <div className={`relative mt-4 grid gap-2 ${isPepeProfile ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <button
             type="button"
             onClick={() => setShowUserModal(true)}
@@ -184,7 +183,7 @@ export const ProfilePage: React.FC = () => {
             <Users className="w-3.5 h-3.5" />
             Cambiar perfil
           </button>
-          {canManage && (
+          {isPepeProfile && (
           <button
             type="button"
             onClick={() => setShowWizardModal(true)}
@@ -459,7 +458,7 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {canManage && <SuperAdminPanel />}
+      {isPepeProfile && <SuperAdminPanel />}
 
       {/* Modales */}
       <UserSelectionModal
