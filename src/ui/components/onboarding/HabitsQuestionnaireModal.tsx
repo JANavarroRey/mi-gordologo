@@ -7,6 +7,8 @@ interface Props {
   personName: string;
   onClose: () => void;
   onComplete: (intake: FoodIntake) => void;
+  busy?: boolean;
+  error?: string | null;
 }
 
 const MEAL_OPTS = [
@@ -24,7 +26,14 @@ function toggle(list: string[], id: string): string[] {
   return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
 }
 
-export const HabitsQuestionnaireModal: React.FC<Props> = ({ isOpen, personName, onClose, onComplete }) => {
+export const HabitsQuestionnaireModal: React.FC<Props> = ({
+  isOpen,
+  personName,
+  onClose,
+  onComplete,
+  busy = false,
+  error = null,
+}) => {
   const [mealsEaten, setMealsEaten] = useState<string[]>(['breakfast', 'lunch', 'dinner']);
   const [sport, setSport] = useState<FoodIntake['sport']>('walk');
   const [sportDays, setSportDays] = useState(3);
@@ -37,6 +46,7 @@ export const HabitsQuestionnaireModal: React.FC<Props> = ({ isOpen, personName, 
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     onComplete({
       completedAt: new Date().toISOString(),
       mealsEaten,
@@ -173,12 +183,15 @@ export const HabitsQuestionnaireModal: React.FC<Props> = ({ isOpen, personName, 
             />
           </div>
 
+          {error && <p className="text-[11px] text-rose-700 leading-relaxed">{error}</p>}
+
           <button
             type="submit"
-            className="w-full py-2.5 rounded-2xl bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1"
+            disabled={busy}
+            className="w-full py-2.5 rounded-2xl bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1 disabled:opacity-60"
           >
             <Check className="w-4 h-4" />
-            Adaptar mi menú
+            {busy ? 'Adaptando comidas y cenas…' : 'Adaptar mi menú'}
           </button>
         </form>
       </div>

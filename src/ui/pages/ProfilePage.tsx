@@ -25,6 +25,8 @@ export const ProfilePage: React.FC = () => {
   const [showUserModal, setShowUserModal] = useState(false);
   const [showWizardModal, setShowWizardModal] = useState(false);
   const [showHabitsModal, setShowHabitsModal] = useState(false);
+  const [habitsBusy, setHabitsBusy] = useState(false);
+  const [habitsError, setHabitsError] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
@@ -96,7 +98,8 @@ export const ProfilePage: React.FC = () => {
   };
 
   const handleHabitsComplete = async (intake: FoodIntake) => {
-    setImportMsg('Adaptando menú…');
+    setHabitsBusy(true);
+    setHabitsError(null);
     try {
       const msg = await personalizeFromIntake(intake);
       setImportMsg(msg);
@@ -104,7 +107,9 @@ export const ProfilePage: React.FC = () => {
       setActiveUser(storageService.getActiveProfile());
       window.dispatchEvent(new Event('storage'));
     } catch (err) {
-      setImportMsg(err instanceof Error ? err.message : 'No se pudo adaptar el menú.');
+      setHabitsError(err instanceof Error ? err.message : 'No se pudo adaptar el menú.');
+    } finally {
+      setHabitsBusy(false);
     }
   };
 
@@ -554,7 +559,13 @@ export const ProfilePage: React.FC = () => {
       <HabitsQuestionnaireModal
         isOpen={showHabitsModal}
         personName={activeUser.name}
-        onClose={() => setShowHabitsModal(false)}
+        busy={habitsBusy}
+        error={habitsError}
+        onClose={() => {
+          if (habitsBusy) return;
+          setShowHabitsModal(false);
+          setHabitsError(null);
+        }}
         onComplete={(intake) => void handleHabitsComplete(intake)}
       />
 

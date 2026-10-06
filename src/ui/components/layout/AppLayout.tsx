@@ -167,11 +167,14 @@ export function AppLayout() {
       <NutritionChatModal isOpen={showChat} onClose={() => setShowChat(false)} />
 
       <HabitsQuestionnaireModal
-        isOpen={showHabits && !habitsBusy}
+        isOpen={showHabits}
         personName={activeUser.name}
+        busy={habitsBusy}
+        error={habitsMsg && /no se pudo|falta|servidor|saturad|desconocida/i.test(habitsMsg) ? habitsMsg : null}
         onClose={() => {
           skippedQuizFor.current = activeUser.id;
           setShowHabits(false);
+          setHabitsMsg(null);
         }}
         onComplete={(intake: FoodIntake) => {
           setHabitsBusy(true);
@@ -191,9 +194,9 @@ export function AppLayout() {
             .finally(() => setHabitsBusy(false));
         }}
       />
-      {(habitsBusy || habitsMsg) && (
+      {habitsMsg && !showHabits && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-sm w-[90%] rounded-2xl bg-neutral-900 text-white text-[11px] px-3 py-2 shadow-lg">
-          {habitsBusy ? 'Adaptando comidas y cenas…' : habitsMsg}
+          {habitsMsg}
         </div>
       )}
     </div>

@@ -6,6 +6,17 @@ import { storageService } from './storageService';
 
 type RawMeal = { recipeName?: string; items?: Array<{ name?: string; quantity?: string; notes?: string | null }> };
 
+function friendlyError(raw?: string): string {
+  const t = (raw || '').toLowerCase();
+  if (/acci[oó]n desconocida/.test(t)) {
+    return 'El servidor aún no tiene esta función. Prueba de nuevo en un minuto; si sigue igual, recarga la app.';
+  }
+  if (t.includes('no_gemini_key') || t.includes('gemini')) {
+    return 'Falta la clave de IA o está saturada. Revisa Superadmin o prueba más tarde.';
+  }
+  return raw || 'No se pudo adaptar el menú.';
+}
+
 function applyLists(lunches: RawMeal[] | undefined, dinners: RawMeal[] | undefined): void {
   const lunchMeals = (lunches || []).map((l) => mealFromParts('lunch', l.recipeName || 'Comida', l.items || []));
   const dinnerMeals = (dinners || []).map((d) => mealFromParts('dinner', d.recipeName || 'Cena', d.items || []));
@@ -16,13 +27,184 @@ function applyLists(lunches: RawMeal[] | undefined, dinners: RawMeal[] | undefin
   storageService.replaceUserMenus(next);
 }
 
+function pick(likes: readonly string[], options: Array<{ tags: string[]; meal: RawMeal }>, fallback: RawMeal[]): RawMeal[] {
+  const liked = options.filter((o) => o.tags.some((tag) => likes.includes(tag)));
+  const pool = liked.length ? liked.map((o) => o.meal) : fallback;
+  const out: RawMeal[] = [];
+  for (let i = 0; i < 7; i++) out.push(pool[i % pool.length]);
+  return out;
+}
+
+function localMenuFromIntake(intake: FoodIntake): { lunches: RawMeal[]; dinners: RawMeal[] } {
+  const lunchBank: Array<{ tags: string[]; meal: RawMeal }> = [
+    {
+      tags: ['Pescado'],
+      meal: {
+        recipeName: 'Merluza al vapor con verduras',
+        items: [
+          { name: 'Merluza', quantity: '150 g', notes: 'en crudo' },
+          { name: 'Judías verdes', quantity: '200 g', notes: null },
+          { name: 'Patata cocida', quantity: '100 g', notes: null },
+          { name: 'AOVE', quantity: '1,5 cdas', notes: null },
+        ],
+      },
+    },
+    {
+      tags: ['Carne'],
+      meal: {
+        recipeName: 'Pollo a la plancha con ensalada',
+        items: [
+          { name: 'Pechuga de pollo', quantity: '100 g', notes: 'en crudo' },
+          { name: 'Ensalada mixta', quantity: '250 g', notes: null },
+          { name: 'Pan integral', quantity: '20 g', notes: null },
+          { name: 'AOVE', quantity: '1,5 cdas', notes: null },
+        ],
+      },
+    },
+    {
+      tags: ['Legumbres'],
+      meal: {
+        recipeName: 'Lentejas estofadas',
+        items: [
+          { name: 'Lentejas', quantity: '60 g', notes: 'en crudo' },
+          { name: 'Verdura de guiso', quantity: '150 g', notes: null },
+          { name: 'Ensalada', quantity: '100 g', notes: null },
+        ],
+      },
+    },
+    {
+      tags: ['Pasta/arroz'],
+      meal: {
+        recipeName: 'Arroz con verduras',
+        items: [
+          { name: 'Arroz', quantity: '60 g', notes: 'en crudo' },
+          { name: 'Verduras', quantity: '200 g', notes: null },
+          { name: 'AOVE', quantity: '1 cda', notes: null },
+        ],
+      },
+    },
+    {
+      tags: ['Huevos'],
+      meal: {
+        recipeName: 'Tortilla francesa con ensalada',
+        items: [
+          { name: 'Huevo', quantity: '1 + 1 clara', notes: null },
+          { name: 'Ensalada', quantity: '300 g', notes: null },
+          { name: 'Pan integral', quantity: '20 g', notes: null },
+        ],
+      },
+    },
+    {
+      tags: ['Guisos', 'Verduras'],
+      meal: {
+        recipeName: 'Hervido murciano de verduras con pescado',
+        items: [
+          { name: 'Pescado blanco', quantity: '150 g', notes: null },
+          { name: 'Judía verde y patata', quantity: '300 g', notes: null },
+        ],
+      },
+    },
+  ];
+  const dinnerBank: Array<{ tags: string[]; meal: RawMeal }> = [
+    {
+      tags: ['Pescado', 'Plancha'],
+      meal: {
+        recipeName: 'Dorada a la plancha',
+        items: [
+          { name: 'Dorada', quantity: '150 g', notes: null },
+          { name: 'Verduras a la plancha', quantity: '250 g', notes: null },
+          { name: 'AOVE', quantity: '1 cda', notes: null },
+        ],
+      },
+    },
+    {
+      tags: ['Ensaladas', 'Huevos'],
+      meal: {
+        recipeName: 'Ensalada completa con huevo',
+        items: [
+          { name: 'Ensalada mixta', quantity: '300 g', notes: null },
+          { name: 'Huevo duro', quantity: '1 unidad', notes: null },
+          { name: 'Atún al natural', quantity: '60 g', notes: null },
+        ],
+      },
+    },
+    {
+      tags: ['Verduras'],
+      meal: {
+        recipeName: 'Crema de calabacín con merluza',
+        items: [
+          { name: 'Crema de calabacín', quantity: '300 g', notes: null },
+          { name: 'Merluza', quantity: '150 g', notes: null },
+        ],
+      },
+    },
+    {
+      tags: ['Carne', 'Plancha'],
+      meal: {
+        recipeName: 'Pavo a la plancha con calabacín',
+        items: [
+          { name: 'Pavo', quantity: '100 g', notes: null },
+          { name: 'Calabacín a la plancha', quantity: '250 g', notes: null },
+        ],
+      },
+    },
+    {
+      tags: ['Lácteos', 'Verduras'],
+      meal: {
+        recipeName: 'Revuelto de claras con verdura',
+        items: [
+          { name: 'Claras', quantity: '2', notes: null },
+          { name: 'Espinacas', quantity: '200 g', notes: null },
+          { name: 'Queso fresco 0%', quantity: '35 g', notes: null },
+        ],
+      },
+    },
+  ];
+  const avoid = new Set((intake.dislikes || []).map((d) => d.toLowerCase()));
+  const filterAvoid = (meals: RawMeal[]) =>
+    meals.filter((m) => ![m.recipeName, ...(m.items || []).map((i) => i.name || '')].join(' ').toLowerCase().split(/\s+/).some((w) => avoid.has(w)));
+  const lunches = filterAvoid(pick(intake.likes, lunchBank, lunchBank.map((b) => b.meal)));
+  const dinners = filterAvoid(pick(intake.likes, dinnerBank, dinnerBank.map((b) => b.meal)));
+  return {
+    lunches: lunches.length ? lunches : lunchBank.map((b) => b.meal).slice(0, 7),
+    dinners: dinners.length ? dinners : dinnerBank.map((b) => b.meal).slice(0, 7),
+  };
+}
+
+function parseMenuPayload(res: { lunches?: RawMeal[]; dinners?: RawMeal[]; text?: string; message?: string }): { lunches: RawMeal[]; dinners: RawMeal[] } | null {
+  if ((res.lunches && res.lunches.length) || (res.dinners && res.dinners.length)) {
+    return { lunches: res.lunches || [], dinners: res.dinners || [] };
+  }
+  const blob = res.text || res.message || '';
+  const match = blob.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[0]) as { lunches?: RawMeal[]; dinners?: RawMeal[] };
+    if ((parsed.lunches && parsed.lunches.length) || (parsed.dinners && parsed.dinners.length)) {
+      return { lunches: parsed.lunches || [], dinners: parsed.dinners || [] };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function requestAdaptedMenu(intake: FoodIntake): Promise<{ lunches: RawMeal[]; dinners: RawMeal[] }> {
+  const primary = await backendService.personalizeMenu(intake);
+  const parsed = parseMenuPayload(primary);
+  if (primary.ok && parsed) return parsed;
+  if (primary.error && !/acci[oó]n desconocida/i.test(primary.error) && primary.error !== 'NO_BACKEND') {
+    throw new Error(friendlyError(primary.error));
+  }
+  return localMenuFromIntake(intake);
+}
+
 export async function personalizeFromIntake(intake: FoodIntake): Promise<string> {
   if (storageService.getActiveUserId() === 'maria_ignacia') {
     throw new Error('El menú de María Ignacia no se sustituye.');
   }
-  const res = await backendService.personalizeMenu(intake);
-  if (!res.ok) throw new Error(res.error || 'No se pudo adaptar el menú.');
-  applyLists(res.lunches, res.dinners);
+  const lists = await requestAdaptedMenu(intake);
+  applyLists(lists.lunches, lists.dinners);
   storageService.setFoodIntake(intake);
   return 'Comidas y cenas adaptadas a tus hábitos.';
 }
@@ -33,8 +215,9 @@ export async function importMenuFromPdf(file: File): Promise<string> {
   }
   const pdfText = await extractPdfText(file);
   const res = await backendService.importMenu(pdfText);
-  if (!res.ok) throw new Error(res.error || 'No se pudo leer el menú del PDF.');
-  applyLists(res.lunches, res.dinners);
+  const parsed = parseMenuPayload(res);
+  if (!res.ok || !parsed) throw new Error(friendlyError(res.error) || 'No se pudo leer el menú del PDF.');
+  applyLists(parsed.lunches, parsed.dinners);
   const current = storageService.getActiveProfile().foodIntake;
   storageService.setFoodIntake({
     completedAt: new Date().toISOString(),
