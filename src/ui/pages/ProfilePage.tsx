@@ -31,15 +31,20 @@ export const ProfilePage: React.FC = () => {
   });
 
   useEffect(() => {
-    setProfiles(storageService.getProfiles());
-    setActiveUser(storageService.getActiveProfile());
-    setServings(storageService.getServings());
-    setFreeDay(storageService.getFreeDay());
-    setFreeDayEnabled(storageService.isFreeDayEnabled());
-    setWeighInDay(storageService.getWeighInDay());
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setNotificationPermission(Notification.permission);
-    }
+    const syncFromStorage = () => {
+      setProfiles(storageService.getProfiles());
+      setActiveUser(storageService.getActiveProfile());
+      setServings(storageService.getServings());
+      setFreeDay(storageService.getFreeDay());
+      setFreeDayEnabled(storageService.isFreeDayEnabled());
+      setWeighInDay(storageService.getWeighInDay());
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        setNotificationPermission(Notification.permission);
+      }
+    };
+    syncFromStorage();
+    window.addEventListener('storage', syncFromStorage);
+    return () => window.removeEventListener('storage', syncFromStorage);
   }, []);
 
   const handleToggleServings = (val: number) => {

@@ -124,6 +124,7 @@ export function AppLayout() {
         onSelectUser={(u) => {
           setActiveUser(u);
           setShowUserModal(false);
+          window.dispatchEvent(new Event('storage'));
         }}
       />
 

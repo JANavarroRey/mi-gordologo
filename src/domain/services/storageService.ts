@@ -144,6 +144,8 @@ export const storageService = {
   setActiveUserId(id: string): void {
     localStorage.setItem(STORAGE_KEYS.ACTIVE_USER, id);
     localStorage.setItem(STORAGE_KEYS.ONBOARDING_DONE, 'true');
+    // El evento nativo `storage` no se dispara en la misma pestaña.
+    window.dispatchEvent(new Event('storage'));
   },
 
   getProfileById(id: string): UserProfile | undefined {
