@@ -94,3 +94,11 @@ alter table public.app_users enable row level security;
 alter table public.user_sessions enable row level security;
 alter table public.user_menus enable row level security;
 alter table public.user_measurements enable row level security;
+
+-- La Edge Function usa service_role (bypassa RLS). Sin GRANT, Postgres responde
+-- "permission denied for table app_users" al crear las cuentas.
+grant usage on schema public to postgres, service_role, anon, authenticated;
+grant all on table public.app_users to postgres, service_role;
+grant all on table public.user_sessions to postgres, service_role;
+grant all on table public.user_menus to postgres, service_role;
+grant all on table public.user_measurements to postgres, service_role;
