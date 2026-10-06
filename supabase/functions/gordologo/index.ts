@@ -108,13 +108,16 @@ function publicUser(row: UserRow) {
   };
 }
 
-function systemInstruction(profile?: { name?: string; age?: number; targetCalories?: number }) {
+function systemInstruction(profile?: { name?: string; age?: number; targetCalories?: number }, skipCalorieRules = false) {
   const name = profile?.name || 'el paciente';
   const age = profile?.age ? `${profile.age} años` : 'edad no indicada';
   const kcal = profile?.targetCalories || 1500;
+  const dietLine = skipCalorieRules
+    ? `Estás asesorando a ${name} (${age}). NO apliques el tope de 1.500 kcal ni recortes cantidades por calorías. Reproduce o diseña el menú pedido tal cual, con raciones caseras reales.`
+    : `Estás asesorando a ${name} (${age}), dieta de ${kcal} kcal según la pauta de Endocrinología del Hospital Morales Meseguer (origen 1.500 kcal, adaptada a este perfil).`;
   return `Eres "El Gordólogo": nutricionista clínico con humor seco, inteligente y elegante. Hablas como un médico culto y cercano de Murcia, no como un influencer ni como una niña de cuatro años.
 
-Estás asesorando a ${name} (${age}), dieta de ${kcal} kcal según la pauta de Endocrinología del Hospital Morales Meseguer (origen 1.500 kcal, adaptada a este perfil).
+${dietLine}
 
 Tono (obligatorio):
 - Cercano, breve, con un toque de ironía fina. Nunca cursi.
@@ -123,7 +126,12 @@ Tono (obligatorio):
 - Firmes con alcohol, azúcar y trampas; educados, no sermón de abuela.
 - Español claro, frases cortas, sin tecnicismos innecesarios. Accesible para personas mayores, no condescendiente.
 
-Reglas clínicas (escala cantidades a ${kcal} kcal respecto a 1.500):
+${skipCalorieRules
+    ? `Reglas:
+1. No recortes ni escalas por calorías.
+2. Recetas elaboradas: prioriza Thermomix/Cookidoo si encaja.
+3. Responde siempre en español, JSON si se pide.`
+    : `Reglas clínicas (escala cantidades a ${kcal} kcal respecto a 1.500):
 1. Carnes magras 100g en crudo (pollo, pavo, conejo, ternera) a 1.500 kcal.
 2. Pescados blancos 150g; azules/semigrasos 100g a 1.500 kcal.
 3. Legumbres 60g crudas a 1.500 kcal.
@@ -132,7 +140,8 @@ Reglas clínicas (escala cantidades a ${kcal} kcal respecto a 1.500):
 6. AOVE: máximo 1–1,5 cucharadas por comida a 1.500 kcal.
 7. Pan integral ~20g (o 2 biscotes) en la mayoría de tomas a 1.500 kcal.
 8. Recetas elaboradas: prioriza Thermomix/Cookidoo.
-9. Responde siempre en español.`;
+9. Responde siempre en español.`}
+`;
 }
 
 function isRetryableGeminiStatus(status: number, message: string): boolean {
@@ -145,7 +154,8 @@ async function callGemini(
   apiKey: string,
   userText: string,
   jsonMode: boolean,
-  profile?: { name?: string; age?: number; targetCalories?: number }
+  profile?: { name?: string; age?: number; targetCalories?: number },
+  skipCalorieRules = false
 ): Promise<string> {
   const models = jsonMode
     ? [
@@ -169,7 +179,7 @@ async function callGemini(
       ];
   const isAuthKey = apiKey.startsWith('AQ.');
   const body: Record<string, unknown> = {
-    system_instruction: { parts: [{ text: systemInstruction(profile) }] },
+    system_instruction: { parts: [{ text: systemInstruction(profile, skipCalorieRules) }] },
     contents: [{ role: 'user', parts: [{ text: userText }] }],
   };
   if (jsonMode) {
@@ -654,10 +664,68 @@ Por favor, devuelve un JSON válido con el siguiente formato exacto:
       const parsed = JSON.parse(jsonMatch[0]);
       return json({
         ok: true,
-        message: parsed.message || '¡Cambio realizado con éxito por El Gordólogo!',
+        message: parsed.message || 'Cambio aplicado.',
         recipeName: parsed.recipeName,
         recipeUrl: parsed.recipeUrl ?? null,
         items: parsed.items,
+      });
+    }
+
+    if (action === 'personalizeMenu' || action === 'importMenu') {
+      if (!session) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      if (session.acting.id === 'maria_ignacia') {
+        return json({ ok: false, error: 'El menú de María Ignacia no se sustituye: es la pauta hospitalaria.' }, 403);
+      }
+      const { data } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
+      const apiKey = data?.gemini_api_key;
+      if (!apiKey) return json({ ok: false, error: 'NO_GEMINI_KEY' }, 503);
+      const profile = {
+        name: session.acting.name,
+        age: session.acting.age,
+        targetCalories: session.acting.target_calories,
+      };
+
+      let prompt = '';
+      if (action === 'importMenu') {
+        const pdfText = String(payload.pdfText || '').slice(0, 24000);
+        if (pdfText.length < 40) return json({ ok: false, error: 'El PDF no tiene texto suficiente.' }, 400);
+        prompt = `Extrae SOLO comidas (almuerzo) y cenas del siguiente menú. Ignora límites calóricos. Si hay una semana, saca 7 comidas y 7 cenas; si hay más días, hasta 14 de cada.
+
+Texto del PDF:
+${pdfText}
+
+Devuelve JSON exacto:
+{
+  "lunches": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }],
+  "dinners": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }]
+}`;
+      } else {
+        const intake = (payload.intake || {}) as Record<string, unknown>;
+        prompt = `Diseña un ciclo de 7 comidas y 7 cenas para ${profile.name}.
+NO fuerces 1500 kcal. Adapta a hábitos reales.
+Tomas habituales: ${JSON.stringify(intake.mealsEaten || [])}
+Deporte: ${intake.sport || 'none'} (${intake.sportDays || 0} días/semana)
+Le gusta: ${JSON.stringify(intake.likes || [])}
+Evita: ${JSON.stringify(intake.dislikes || [])}
+Alergias: ${intake.allergies || 'ninguna'}
+Notas: ${intake.notes || '—'}
+Cocina española / murciana, cantidades caseras claras (g o cucharadas). Thermomix si encaja.
+
+JSON exacto:
+{
+  "lunches": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }],
+  "dinners": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }]
+}`;
+      }
+
+      const rawText = await callGemini(apiKey, prompt, true, profile, true);
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return json({ ok: false, error: 'No pude interpretar el menú. Prueba de nuevo.' }, 500);
+      const parsed = JSON.parse(jsonMatch[0]);
+      return json({
+        ok: true,
+        lunches: Array.isArray(parsed.lunches) ? parsed.lunches : [],
+        dinners: Array.isArray(parsed.dinners) ? parsed.dinners : [],
       });
     }
 

@@ -1,6 +1,6 @@
 import { Outlet, NavLink } from 'react-router-dom';
 import { UtensilsCrossed, TrendingUp, ShoppingCart, User, HelpCircle, ChevronDown, MessageCircle } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { storageService } from '@/domain/services/storageService';
 import { backendService } from '@/domain/services/backendService';
 import { authSyncService } from '@/domain/services/authSyncService';
@@ -9,8 +9,10 @@ import { TutorialModal } from '@/ui/components/tutorial/TutorialModal';
 import { WeeklyWeighInAlert } from '@/ui/components/alerts/WeeklyWeighInAlert';
 import { PwaInstallBanner } from '@/ui/components/pwa/PwaInstallBanner';
 import { NutritionChatModal } from '@/ui/components/chat/NutritionChatModal';
+import { HabitsQuestionnaireModal } from '@/ui/components/onboarding/HabitsQuestionnaireModal';
 import { assetUrl } from '@/shared/assets';
-import type { UserProfile } from '@/domain/models/types';
+import type { FoodIntake, UserProfile } from '@/domain/models/types';
+import { personalizeFromIntake } from '@/domain/services/menuPersonalizeService';
 
 export function AppLayout() {
   const [activeUser, setActiveUser] = useState<UserProfile>(() => storageService.getActiveProfile());
@@ -19,16 +21,34 @@ export function AppLayout() {
   );
   const [showTutorialModal, setShowTutorialModal] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [showHabits, setShowHabits] = useState(false);
+  const [habitsBusy, setHabitsBusy] = useState(false);
+  const [habitsMsg, setHabitsMsg] = useState<string | null>(null);
+  const skippedQuizFor = useRef<string | null>(null);
 
   useEffect(() => {
     const handleStorageChange = () => {
-      setActiveUser(storageService.getActiveProfile());
+      const next = storageService.getActiveProfile();
+      setActiveUser(next);
+      if (
+        backendService.isLoggedIn() &&
+        storageService.needsHabitsQuiz(next.id) &&
+        skippedQuizFor.current !== next.id
+      ) {
+        setShowHabits(true);
+      } else if (!storageService.needsHabitsQuiz(next.id)) {
+        setShowHabits(false);
+      }
     };
     window.addEventListener('storage', handleStorageChange);
     if (backendService.isLoggedIn()) {
       void authSyncService.hydrateFromServer().then(() => {
-        setActiveUser(storageService.getActiveProfile());
+        const next = storageService.getActiveProfile();
+        setActiveUser(next);
+        setShowHabits(storageService.needsHabitsQuiz(next.id) && skippedQuizFor.current !== next.id);
       });
+    } else if (storageService.needsHabitsQuiz()) {
+      setShowHabits(true);
     }
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
@@ -145,6 +165,37 @@ export function AppLayout() {
       />
 
       <NutritionChatModal isOpen={showChat} onClose={() => setShowChat(false)} />
+
+      <HabitsQuestionnaireModal
+        isOpen={showHabits && !habitsBusy}
+        personName={activeUser.name}
+        onClose={() => {
+          skippedQuizFor.current = activeUser.id;
+          setShowHabits(false);
+        }}
+        onComplete={(intake: FoodIntake) => {
+          setHabitsBusy(true);
+          setHabitsMsg(null);
+          void personalizeFromIntake(intake)
+            .then((msg) => {
+              skippedQuizFor.current = null;
+              setHabitsMsg(msg);
+              setShowHabits(false);
+              setActiveUser(storageService.getActiveProfile());
+              window.dispatchEvent(new Event('storage'));
+            })
+            .catch((err: unknown) => {
+              setHabitsMsg(err instanceof Error ? err.message : 'No se pudo adaptar el menú.');
+              setShowHabits(true);
+            })
+            .finally(() => setHabitsBusy(false));
+        }}
+      />
+      {(habitsBusy || habitsMsg) && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-sm w-[90%] rounded-2xl bg-neutral-900 text-white text-[11px] px-3 py-2 shadow-lg">
+          {habitsBusy ? 'Adaptando comidas y cenas…' : habitsMsg}
+        </div>
+      )}
     </div>
   );
 }

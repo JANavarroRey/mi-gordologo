@@ -12,6 +12,19 @@ export interface UserProfile {
   readonly gender?: 'male' | 'female' | null;
   readonly activityLevel?: 'sedentary' | 'moderate' | 'active' | null;
   readonly goal?: 'lose_weight' | 'maintain' | null;
+  readonly foodIntake?: FoodIntake | null;
+}
+
+export interface FoodIntake {
+  readonly completedAt: string;
+  readonly mealsEaten: readonly string[];
+  readonly sport: 'none' | 'walk' | 'gym' | 'other';
+  readonly sportDays: number;
+  readonly likes: readonly string[];
+  readonly dislikes: readonly string[];
+  readonly allergies: string;
+  readonly notes: string;
+  readonly importedFromPdf?: boolean;
 }
 
 export interface BodyMeasurement {

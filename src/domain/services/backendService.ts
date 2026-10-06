@@ -45,7 +45,8 @@ export type GordologoResponse = {
   menusEdited?: boolean;
   menusUpdatedAt?: string | null;
   measurements?: unknown;
-  measurementsUpdatedAt?: string | null;
+  lunches?: Array<{ recipeName?: string; items?: Array<{ name?: string; quantity?: string; notes?: string | null }> }>;
+  dinners?: Array<{ recipeName?: string; items?: Array<{ name?: string; quantity?: string; notes?: string | null }> }>;
 };
 
 export const backendService = {
@@ -170,5 +171,13 @@ export const backendService = {
 
   setGeminiKey(apiKey: string) {
     return this.call({ action: 'setGeminiKey', apiKey });
+  },
+
+  personalizeMenu(intake: unknown) {
+    return this.call({ action: 'personalizeMenu', intake });
+  },
+
+  importMenu(pdfText: string) {
+    return this.call({ action: 'importMenu', pdfText });
   },
 };

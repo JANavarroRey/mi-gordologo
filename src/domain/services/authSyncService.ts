@@ -1,6 +1,6 @@
 import { backendService } from './backendService';
 import { storageService } from './storageService';
-import type { BodyMeasurement, UserProfile, WeekMenu } from '../models/types';
+import type { BodyMeasurement, FoodIntake, UserProfile, WeekMenu } from '../models/types';
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 let hydrating = false;
@@ -16,7 +16,10 @@ function toLocalProfile(u: {
   activityLevel?: string | null;
   goal?: string | null;
   createdAt?: string;
+  settings?: Record<string, unknown>;
 }): UserProfile {
+  const settings = u.settings || {};
+  const rawIntake = settings.foodIntake as FoodIntake | undefined;
   return {
     id: u.id,
     name: u.name,
@@ -32,6 +35,7 @@ function toLocalProfile(u: {
         ? u.activityLevel
         : null,
     goal: u.goal === 'lose_weight' || u.goal === 'maintain' ? u.goal : null,
+    foodIntake: rawIntake?.completedAt ? rawIntake : storageService.getProfileById(u.id)?.foodIntake ?? null,
   };
 }
 
@@ -158,6 +162,7 @@ export const authSyncService = {
         freeDay: storageService.getFreeDay(uid),
         freeDayEnabled: storageService.isFreeDayEnabled(uid),
         weighInDay: storageService.getWeighInDay(uid),
+        foodIntake: p.foodIntake || null,
       },
     });
   },

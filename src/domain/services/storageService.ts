@@ -183,6 +183,20 @@ export const storageService = {
     return id === SUPERADMIN_PROFILE_ID || profile?.role === 'superadmin';
   },
 
+  needsHabitsQuiz(userId?: string): boolean {
+    const id = userId || this.getActiveUserId();
+    if (id === 'maria_ignacia') return false;
+    const p = this.getProfileById(id);
+    return Boolean(p) && !p?.foodIntake?.completedAt;
+  },
+
+  setFoodIntake(intake: UserProfile['foodIntake'], userId?: string): void {
+    const id = userId || this.getActiveUserId();
+    const p = this.getProfileById(id);
+    if (!p || !intake) return;
+    this.updateProfile({ ...p, foodIntake: intake });
+  },
+
   replaceProfiles(profiles: UserProfile[]): void {
     localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(ensureBuiltinProfiles(profiles)));
   },
@@ -246,6 +260,7 @@ export const storageService = {
       gender: data.gender ?? null,
       activityLevel: data.activityLevel,
       goal: data.goal,
+      foodIntake: null,
     };
 
     const profiles = this.getProfiles();
@@ -427,6 +442,14 @@ export const storageService = {
     const profile = this.getProfileById(targetUser);
     const menuOwnerId = profile?.linkedMenuUserId || targetUser;
     localStorage.setItem(`${STORAGE_KEYS.MENUS}_${menuOwnerId}`, JSON.stringify(menus));
+  },
+
+  replaceUserMenus(menus: WeekMenu[], userId?: string): void {
+    const targetUser = userId || this.getActiveUserId();
+    this.saveMenus(menus, targetUser);
+    localStorage.setItem(`${STORAGE_KEYS.MENUS}_${targetUser}_edited`, '1');
+    scheduleServerPush();
+    window.dispatchEvent(new Event('storage'));
   },
 
   updateDayMenu(weekIndex: number, dayIndex: number, updatedDay: WeekMenu['days'][0], userId?: string): void {

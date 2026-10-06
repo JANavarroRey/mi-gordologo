@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Calendar, Heart, Bell, Share2, UserPlus, CheckCircle2, ShieldCheck, LogOut, KeyRound, Scale } from 'lucide-react';
+import { Users, Calendar, Heart, Bell, Share2, UserPlus, CheckCircle2, ShieldCheck, LogOut, KeyRound, Scale, FileUp, ClipboardList } from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
 import { backendService } from '@/domain/services/backendService';
 import { UserSelectionModal } from '@/ui/components/onboarding/UserSelectionModal';
 import { NewUserWizardModal } from '@/ui/components/onboarding/NewUserWizardModal';
+import { HabitsQuestionnaireModal } from '@/ui/components/onboarding/HabitsQuestionnaireModal';
+import { ImportMenuModal } from '@/ui/components/menu/ImportMenuModal';
 import { TutorialModal } from '@/ui/components/tutorial/TutorialModal';
 import { SuperAdminPanel } from '@/ui/components/admin/SuperAdminPanel';
 import { HospitalGuidelinesCard } from '@/ui/components/guidelines/HospitalGuidelinesCard';
 import { assetUrl } from '@/shared/assets';
-import type { UserProfile } from '@/domain/models/types';
+import type { FoodIntake, UserProfile } from '@/domain/models/types';
+import { importMenuFromPdf, personalizeFromIntake } from '@/domain/services/menuPersonalizeService';
 
 const WEEKDAY_LABELS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'] as const;
 
@@ -21,6 +24,10 @@ export const ProfilePage: React.FC = () => {
   const [notifMsg, setNotifMsg] = useState<string | null>(null);
   const [showUserModal, setShowUserModal] = useState(false);
   const [showWizardModal, setShowWizardModal] = useState(false);
+  const [showHabitsModal, setShowHabitsModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
   const [ownPassword, setOwnPassword] = useState('');
   const [pwdMsg, setPwdMsg] = useState<string | null>(null);
@@ -88,6 +95,34 @@ export const ProfilePage: React.FC = () => {
     window.dispatchEvent(new Event('storage'));
   };
 
+  const handleHabitsComplete = async (intake: FoodIntake) => {
+    setImportMsg('Adaptando menú…');
+    try {
+      const msg = await personalizeFromIntake(intake);
+      setImportMsg(msg);
+      setShowHabitsModal(false);
+      setActiveUser(storageService.getActiveProfile());
+      window.dispatchEvent(new Event('storage'));
+    } catch (err) {
+      setImportMsg(err instanceof Error ? err.message : 'No se pudo adaptar el menú.');
+    }
+  };
+
+  const handleImportPdf = async (file: File) => {
+    setImportBusy(true);
+    setImportMsg(null);
+    try {
+      const msg = await importMenuFromPdf(file);
+      setImportMsg(msg);
+      setActiveUser(storageService.getActiveProfile());
+      window.dispatchEvent(new Event('storage'));
+    } catch (err) {
+      setImportMsg(err instanceof Error ? err.message : 'No se pudo importar el PDF.');
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
   const handleLogout = async () => {
     await backendService.logout();
     window.location.reload();
@@ -152,6 +187,8 @@ export const ProfilePage: React.FC = () => {
   };
 
   const isPepeProfile = storageService.isSuperadmin(activeUser.id);
+  const isMaria = activeUser.id === 'maria_ignacia';
+  const importedFromPdf = Boolean(activeUser.foodIntake?.importedFromPdf);
 
   return (
     <div className="space-y-4">
@@ -209,7 +246,11 @@ export const ProfilePage: React.FC = () => {
           <h3 className="font-bold text-sm text-neutral-900">Contraseña y menú de {activeUser.name}</h3>
         </div>
         <p className="text-[11px] text-neutral-500 leading-relaxed">
-          Menú propio ({activeUser.targetCalories} kcal). Los cambios de platos se guardan en el servidor para este perfil.
+          {isMaria
+            ? `Menú hospitalario (${activeUser.targetCalories} kcal). Los cambios de platos se guardan para este perfil.`
+            : importedFromPdf
+              ? 'Menú de comidas y cenas importado desde PDF (sin recorte de calorías). Desayunos y meriendas se mantienen.'
+              : `Menú propio (${activeUser.targetCalories} kcal). Tras el cuestionario, comidas y cenas se adaptan a hábitos.`}
         </p>
         <form onSubmit={(e) => void handleChangePassword(e)} className="flex gap-2">
           <input
@@ -224,6 +265,30 @@ export const ProfilePage: React.FC = () => {
             Cambiar
           </button>
         </form>
+        {!isMaria && (
+          <div className="grid grid-cols-1 gap-2">
+            <button
+              type="button"
+              onClick={() => setShowHabitsModal(true)}
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-emerald-200 text-emerald-900 text-xs font-bold"
+            >
+              <ClipboardList className="w-3.5 h-3.5" />
+              Cuestionario de hábitos
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setImportMsg(null);
+                setShowImportModal(true);
+              }}
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-emerald-200 text-emerald-900 text-xs font-bold"
+            >
+              <FileUp className="w-3.5 h-3.5" />
+              Adjuntar menú en PDF
+            </button>
+          </div>
+        )}
+        {!isMaria && !importedFromPdf && (
         <button
           type="button"
           onClick={handleRescale}
@@ -232,6 +297,7 @@ export const ProfilePage: React.FC = () => {
           <Scale className="w-3.5 h-3.5" />
           Reescalar cantidades a {activeUser.targetCalories} kcal
         </button>
+        )}
         <button
           type="button"
           onClick={() => void handleLogout()}
@@ -241,6 +307,7 @@ export const ProfilePage: React.FC = () => {
           Cerrar sesión
         </button>
         {pwdMsg && <p className="text-[11px] text-neutral-600">{pwdMsg}</p>}
+        {importMsg && !showImportModal && <p className="text-[11px] text-neutral-600">{importMsg}</p>}
       </div>
 
       {/* Raciones y Día Libre */}
@@ -333,7 +400,7 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      <HospitalGuidelinesCard />
+      {activeUser.id === 'maria_ignacia' && <HospitalGuidelinesCard />}
 
       {/* Sistema de Alertas y Recordatorios Semanales */}
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-4">
@@ -445,7 +512,8 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Tarjeta Médica Informativa */}
+      {/* Tarjeta Médica Informativa — solo pauta de María */}
+      {isMaria && (
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-2">
         <div className="flex items-center space-x-2">
           <Heart className="w-4 h-4 text-rose-500" />
@@ -457,6 +525,7 @@ export const ProfilePage: React.FC = () => {
           <p>🎯 Meta: Reducción de masa grasa preservando masa muscular</p>
         </div>
       </div>
+      )}
 
       {isPepeProfile && <SuperAdminPanel />}
 
@@ -480,6 +549,21 @@ export const ProfilePage: React.FC = () => {
           setActiveUser(newProfile);
           window.dispatchEvent(new Event('storage'));
         }}
+      />
+
+      <HabitsQuestionnaireModal
+        isOpen={showHabitsModal}
+        personName={activeUser.name}
+        onClose={() => setShowHabitsModal(false)}
+        onComplete={(intake) => void handleHabitsComplete(intake)}
+      />
+
+      <ImportMenuModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onFile={handleImportPdf}
+        busy={importBusy}
+        message={importMsg}
       />
 
       <TutorialModal

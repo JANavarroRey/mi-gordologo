@@ -426,7 +426,7 @@ export const MenuPage: React.FC = () => {
           {/* Cards de comidas — ocultas en día libre */}
           {!activeDay.isFreeDay && (
           <div className="space-y-3">
-            <HospitalGuidelinesCard />
+            {activeProfile.id === 'maria_ignacia' && <HospitalGuidelinesCard />}
             {(Object.keys(MEAL_LABELS) as MealType[]).map((mealType) => {
               const meal = activeDay.meals[mealType];
               if (!meal) return null;
