@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Calendar, Sparkles, Heart, Bell, Share2, Link as LinkIcon, UserPlus, CheckCircle2, ShieldCheck, Cloud, ChevronDown } from 'lucide-react';
+import { Users, Calendar, Heart, Bell, Share2, Link as LinkIcon, UserPlus, CheckCircle2, ShieldCheck, Cloud, ChevronDown } from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
 import { cloudSyncService } from '@/domain/services/cloudSyncService';
 import { UserSelectionModal } from '@/ui/components/onboarding/UserSelectionModal';
 import { NewUserWizardModal } from '@/ui/components/onboarding/NewUserWizardModal';
 import { TutorialModal } from '@/ui/components/tutorial/TutorialModal';
 import { HospitalGuidelinesCard } from '@/ui/components/guidelines/HospitalGuidelinesCard';
+import { SuperAdminPanel } from '@/ui/components/admin/SuperAdminPanel';
 import { assetUrl } from '@/shared/assets';
 import type { UserProfile } from '@/domain/models/types';
 
@@ -18,12 +19,10 @@ export const ProfilePage: React.FC = () => {
   const [freeDay, setFreeDay] = useState(() => storageService.getFreeDay());
   const [freeDayEnabled, setFreeDayEnabled] = useState(() => storageService.isFreeDayEnabled());
   const [weighInDay, setWeighInDay] = useState(() => storageService.getWeighInDay());
-  const [geminiKey, setGeminiKey] = useState(() => storageService.getGeminiApiKey());
   const [notifMsg, setNotifMsg] = useState<string | null>(null);
   const [showUserModal, setShowUserModal] = useState(false);
   const [showWizardModal, setShowWizardModal] = useState(false);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
-  const [keySavedFeedback, setKeySavedFeedback] = useState(false);
   const [familyKey, setFamilyKey] = useState(() => cloudSyncService.getFamilyKey());
   const [cloudMsg, setCloudMsg] = useState<string | null>(null);
   const [cloudBusy, setCloudBusy] = useState(false);
@@ -38,7 +37,6 @@ export const ProfilePage: React.FC = () => {
     setFreeDay(storageService.getFreeDay());
     setFreeDayEnabled(storageService.isFreeDayEnabled());
     setWeighInDay(storageService.getWeighInDay());
-    setGeminiKey(storageService.getGeminiApiKey());
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setNotificationPermission(Notification.permission);
     }
@@ -76,13 +74,6 @@ export const ProfilePage: React.FC = () => {
     setActiveUser(updated);
     setProfiles(storageService.getProfiles());
     window.dispatchEvent(new Event('storage'));
-  };
-
-  const handleSaveGeminiKey = (e: React.FormEvent) => {
-    e.preventDefault();
-    storageService.setGeminiApiKey(geminiKey);
-    setKeySavedFeedback(true);
-    setTimeout(() => setKeySavedFeedback(false), 3000);
   };
 
   const handleSaveFamilyKey = () => {
@@ -489,45 +480,22 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Ajustes técnicos: colapsados (se configurarán en el siguiente paso) */}
+      <SuperAdminPanel />
+
+      {/* Ajustes técnicos: colapsados */}
       <details className="bg-white rounded-3xl shadow-sm border border-neutral-200 group">
         <summary className="cursor-pointer list-none flex items-center justify-between p-4 font-bold text-sm text-neutral-800">
           <span className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-emerald-600" />
-            Ajustes avanzados
-            <span className="text-[10px] font-semibold text-neutral-400">(IA · nube)</span>
+            <Cloud className="w-4 h-4 text-sky-600" />
+            Copia en la nube
           </span>
           <ChevronDown className="w-4 h-4 text-neutral-400 group-open:rotate-180 transition-transform" />
         </summary>
         <div className="px-4 pb-4 space-y-4 border-t border-neutral-100 pt-3">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-bold text-neutral-700">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-              Clave IA (Gemini)
-            </div>
-            <form onSubmit={handleSaveGeminiKey} className="flex gap-2">
-              <input
-                type="password"
-                placeholder="Pegar clave…"
-                value={geminiKey}
-                onChange={(e) => setGeminiKey(e.target.value)}
-                autoComplete="off"
-                className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 font-mono min-w-0"
-              />
-              <button type="submit" className="px-3 py-2 rounded-xl bg-neutral-800 text-white font-bold text-xs shrink-0">
-                Guardar
-              </button>
-            </form>
-            {keySavedFeedback && (
-              <p className="text-[11px] text-emerald-700 font-semibold">✓ Guardada en este móvil.</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-bold text-neutral-700">
-              <Cloud className="w-3.5 h-3.5 text-sky-600" />
-              Copia en la nube
-            </div>
+            <p className="text-[11px] text-neutral-500 leading-relaxed">
+              Sincroniza menús entre móviles. María no necesita esto para usar la IA.
+            </p>
             <div className="flex gap-2">
               <input
                 type="password"

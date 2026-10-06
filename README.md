@@ -25,19 +25,14 @@ npm run build
 npm run preview
 ```
 
-## Gemini API (opcional)
+## IA Gemini (una sola clave, superadmin)
 
-La app funciona **sin API key** con un motor offline de ajustes y respuestas.
+La app funciona sin IA (motor de la dieta). La clave de Google **no se pega en cada móvil**.
 
-Para activar IA real:
-
-1. Crea una clave gratuita en [Google AI Studio](https://aistudio.google.com/apikey).
-2. Opción A — en la app: **Perfil → Clave Gemini**.
-3. Opción B — archivo `.env` (copia `.env.example`):
-
-```env
-VITE_GEMINI_API_KEY=tu_clave_aqui
-```
+1. Monta Supabase (SQL de `supabase/schema.sql` + función `gordologo`).
+2. Secrets de GitHub Pages: `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` (la anon es pública a propósito; **nunca** pongas la clave Gemini ahí).
+3. En la app: **Mi Perfil → Superadmin** → crea tu contraseña → pega la clave de [Google AI Studio](https://aistudio.google.com/apikey).
+4. Queda en el servidor. El chat y “Ajustar” la usan en todos los dispositivos.
 
 ## Despliegue en GitHub Pages
 

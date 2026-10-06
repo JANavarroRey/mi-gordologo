@@ -1,7 +1,6 @@
-import { GoogleGenAI } from '@google/genai';
-import { storageService } from './storageService';
 import { buildCookidooSearchUrl } from '@/data/hospitalMenuSeed';
 import type { Meal, MealItem, MealType } from '../models/types';
+import { backendService } from './backendService';
 
 export interface AISwapResponse {
   readonly message: string;
@@ -9,21 +8,6 @@ export interface AISwapResponse {
   readonly suggestedItems?: MealItem[];
   readonly recipeUrl?: string | null;
 }
-
-const SYSTEM_INSTRUCTION = `Eres "El Gordólogo", un asistente médico y nutricionista con chispa, empático, cómplice y un toque de sátira cariñosa pero con absoluto rigor clínico.
-Estás asesorando principalmente a María Ignacia, una mujer de casi 70 años de Murcia que sigue una dieta de 1.500 kcal pautada por la Unidad de Endocrinología y Nutrición del Hospital Morales Meseguer.
-
-Reglas clínicas inquebrantables del hospital:
-1. Las carnes magras son de 100g en crudo (pollo, pavo, conejo, ternera).
-2. Los pescados blancos son de 150g; azules/semigrasos son de 100g.
-3. Legumbres: 60g crudas (unas 9 cucharadas soperas cocidas).
-4. Arroz o pasta: 60g crudos en comida; 45g en cena.
-5. Patatas: 200g (2 pequeñas) o 100g (1 pequeña) según plato.
-6. Aceite de oliva virgen extra: máximo 1 - 1,5 cucharadas soperas por comida.
-7. Pan integral: 20g (2 biscotes) en la mayoría de tomas.
-8. Siempre que sugieras recetas elaboradas, prioriza preparaciones aptas para Thermomix.
-9. Responde siempre en español, de forma muy clara, con frases directas, fácil de leer para personas mayores.
-10. Tono: cariñoso, divertido, sin tecnicismos difíciles, motivador y nunca despectivo.`;
 
 export const geminiService = {
   /**
@@ -34,58 +18,34 @@ export const geminiService = {
     currentMeal: Meal,
     userPrompt: string
   ): Promise<AISwapResponse> {
-    const apiKey = storageService.getGeminiApiKey();
-
-    if (apiKey) {
+    if (backendService.isConfigured()) {
       try {
-        const client = new GoogleGenAI({ apiKey });
-        const prompt = `El usuario quiere modificar el plato de "${mealType}".
-Plato actual:
-- Nombre: ${currentMeal.recipeName || 'Plato'}
-- Ingredientes actuales: ${currentMeal.items.map((i) => `${i.name} (${i.quantity || ''})`).join(', ')}
-
-Petición del usuario: "${userPrompt}"
-
-Por favor, devuelve un JSON válido con el siguiente formato exacto (sin markdown extra alrededor si es posible, o en bloque json):
-{
-  "message": "Comentario ingenioso y profesional del Gordólogo explicando el cambio",
-  "recipeName": "Nuevo nombre del plato o receta",
-  "recipeUrl": "URL de Cookidoo o Thermomix si aplica o null",
-  "items": [
-    { "name": "Nombre ingrediente", "quantity": "Cantidad recomendada", "notes": "opcional" }
-  ]
-}`;
-
-        const response = await client.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: prompt,
-          config: {
-            systemInstruction: SYSTEM_INSTRUCTION,
-            responseMimeType: 'application/json',
-          },
+        const res = await backendService.call({
+          action: 'adjustMeal',
+          mealType,
+          userPrompt,
+          currentMeal,
         });
-
-        const rawText = response.text || '';
-        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
+        if (res.ok && (res.items || res.recipeName || res.message)) {
           return {
-            message: parsed.message || '¡Cambio realizado con éxito por El Gordólogo!',
+            message: res.message || '¡Cambio realizado con éxito por El Gordólogo!',
             updatedMeal: {
               ...currentMeal,
-              recipeName: parsed.recipeName || currentMeal.recipeName,
-              recipeUrl: parsed.recipeUrl || currentMeal.recipeUrl,
-              items: parsed.items && Array.isArray(parsed.items) ? parsed.items : currentMeal.items,
+              recipeName: res.recipeName || currentMeal.recipeName,
+              recipeUrl: res.recipeUrl || currentMeal.recipeUrl,
+              items: res.items && Array.isArray(res.items) ? (res.items as MealItem[]) : currentMeal.items,
             },
           };
         }
-
-        return {
-          message: rawText || 'He procesado tu petición.',
-        };
+        if (res.error && res.error !== 'NO_GEMINI_KEY') {
+          const offline = this.fallbackAdjustment(mealType, currentMeal, userPrompt);
+          return {
+            ...offline,
+            message: `⚠️ Gemini no respondió (${String(res.error).slice(0, 80)}). Usé el motor del hospital: ${offline.message}`,
+          };
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        // Si hay clave pero falla (cuota, red, modelo), avisar y usar offline
         const offline = this.fallbackAdjustment(mealType, currentMeal, userPrompt);
         return {
           ...offline,
@@ -94,7 +54,6 @@ Por favor, devuelve un JSON válido con el siguiente formato exacto (sin markdow
       }
     }
 
-    // === MOTOR INTELIGENTE DE RESPALDO (Sin necesidad de API Key, 100% gratuito) ===
     return this.fallbackAdjustment(mealType, currentMeal, userPrompt);
   },
 
@@ -102,21 +61,13 @@ Por favor, devuelve un JSON válido con el siguiente formato exacto (sin markdow
    * Responde preguntas generales de nutrición (chat del Gordólogo).
    */
   async askNutritionQuestion(question: string): Promise<string> {
-    const apiKey = storageService.getGeminiApiKey();
-    if (apiKey) {
+    if (backendService.isConfigured()) {
       try {
-        const client = new GoogleGenAI({ apiKey });
-        const response = await client.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: `Pregunta del paciente: "${question}"
-
-Responde en español, 3-8 frases claras, sin markdown complejo.
-Si pregunta por calorías de algo concreto, da una estimación razonable.
-Si implica alcohol, azúcar, miel o cerveza sin alcohol: prohíbelo con firmeza pero cariño y sugiere alternativa.`,
-          config: { systemInstruction: SYSTEM_INSTRUCTION },
-        });
-        const text = (response.text || '').trim();
-        if (text) return text;
+        const res = await backendService.call({ action: 'ask', question });
+        if (res.ok && res.text) return res.text;
+        if (res.error && res.error !== 'NO_GEMINI_KEY') {
+          return `⚠️ No pude hablar con Gemini (${String(res.error).slice(0, 100)}).\n\n${this.fallbackNutritionAnswer(question)}`;
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return `⚠️ No pude hablar con Gemini (${msg.slice(0, 100)}).\n\n${this.fallbackNutritionAnswer(question)}`;
@@ -151,7 +102,7 @@ Si implica alcohol, azúcar, miel o cerveza sin alcohol: prohíbelo con firmeza 
     if (/peso|bajar|adelgaz|estanc/.test(q)) {
       return '⚖️ Pésate el mismo día en ayunas. Si hay estancamiento: revisa aceite, pan, día libre y agua. En Seguimiento tienes el parte semanal del Gordólogo.';
     }
-    return '📋 Puedo hablar de calorías, fruta, antojos, agua, aceite o peso. Para cambiar un plato usa “Ajustar” en el menú. Con clave Gemini en Perfil, las respuestas son más completas.';
+    return '📋 Puedo hablar de calorías, fruta, antojos, agua, aceite o peso. Para cambiar un plato usa “Ajustar” en el menú.';
   },
 
   /**

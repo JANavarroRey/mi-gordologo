@@ -29,8 +29,7 @@ jobs:
       - run: npm ci
       - name: Build
         env:
-          # Opcional: secrets del repo (Settings → Secrets). No pongas la clave Gemini aquí
-          # (queda embebida en el JS público); mejor pegarla en Perfil en el móvil.
+          # Anon key es pública (cliente). La clave Gemini NO va aquí.
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
