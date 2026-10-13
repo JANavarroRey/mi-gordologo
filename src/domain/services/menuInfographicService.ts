@@ -284,8 +284,8 @@ function drawTable(
   w: number,
   h: number
 ) {
-  const dayW = 104;
-  const headerH = 64;
+  const dayW = 120;
+  const headerH = 72;
   const bodyH = h - headerH;
   const rowH = bodyH / 7;
   const mealW = (w - dayW) / 3;
@@ -310,10 +310,10 @@ function drawTable(
   ];
 
   headers.forEach((col) => {
-    ctx.font = `800 22px ${FONT}`;
+    ctx.font = `800 26px ${FONT}`;
     const labelW = ctx.measureText(col.label).width;
-    const gap = 8;
-    const iconSlot = 20;
+    const gap = 10;
+    const iconSlot = 22;
     const blockW = iconSlot + gap + labelW;
     const start = col.cx - blockW / 2;
     col.icon(ctx, start + iconSlot / 2, y + headerH / 2);
@@ -330,23 +330,23 @@ function drawTable(
 
     const letter = DAY_LETTER[day.dayOfWeek] ?? DAY_LETTER[i];
     const name = DAY_NAME[day.dayOfWeek] ?? DAY_NAME[i];
-    const circleR = Math.min(28, rowH * 0.28);
+    const circleR = Math.min(32, rowH * 0.3);
     const cx = x + dayW / 2;
-    const cy = rowY + rowH / 2 - 12;
+    const cy = rowY + rowH / 2 - 14;
 
     ctx.fillStyle = C.brand;
     ctx.beginPath();
     ctx.arc(cx, cy, circleR, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = C.white;
-    ctx.font = `800 24px ${FONT}`;
+    ctx.font = `800 30px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(letter, cx, cy + 1);
 
     ctx.fillStyle = C.ink;
-    ctx.font = `800 14px ${FONT}`;
-    ctx.fillText(name, cx, cy + circleR + 14);
+    ctx.font = `800 17px ${FONT}`;
+    ctx.fillText(name, cx, cy + circleR + 16);
 
     const meals = [
       { key: 'breakfast' as const, ox: x + dayW },
@@ -358,24 +358,24 @@ function drawTable(
       if (day.isFreeDay) {
         if (m.key === 'lunch') {
           ctx.fillStyle = C.free;
-          ctx.font = `700 20px ${FONT}`;
+          ctx.font = `700 24px ${FONT}`;
           ctx.textAlign = 'left';
           ctx.textBaseline = 'middle';
-          ctx.fillText('Día libre', m.ox + 16, rowY + rowH / 2);
+          ctx.fillText('Día libre', m.ox + 14, rowY + rowH / 2);
         }
         return;
       }
       const title = mealTitle(day.meals[m.key], '—');
       ctx.fillStyle = C.ink;
-      ctx.font = `600 20px ${FONT}`;
+      ctx.font = `700 26px ${FONT}`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      const lines = wrapText(ctx, title, mealW - 28).slice(0, 4);
-      const lineH = 24;
+      const lines = wrapText(ctx, title, mealW - 24).slice(0, 4);
+      const lineH = 30;
       const blockH = lines.length * lineH;
       let ty = rowY + (rowH - blockH) / 2 + lineH / 2;
       lines.forEach((line) => {
-        ctx.fillText(line, m.ox + 14, ty, mealW - 28);
+        ctx.fillText(line, m.ox + 12, ty, mealW - 24);
         ty += lineH;
       });
     });
