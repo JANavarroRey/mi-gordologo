@@ -1,4 +1,5 @@
 import type { Meal, WeekMenu } from '../models/types';
+import { LOGO_MARK_DATA_URL } from './logoMarkDataUrl';
 
 type InfographicInput = {
   week: WeekMenu;
@@ -14,19 +15,20 @@ const PAGE_H = 1600;
 const DAY_LETTER = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 const DAY_NAME = ['LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO', 'DOMINGO'];
 
-/** Paleta idéntica a la plantilla de referencia. */
+/** Paleta tomada de la plantilla de referencia. */
 const C = {
-  bg: '#eef7f0',
-  blob: '#d8efe0',
+  page: '#e9f5ec',
+  blob: '#cfe9d6',
+  blobSoft: '#d9efdf',
   card: '#ffffff',
-  cardLine: '#d7e8dc',
+  cardLine: '#c9ddd0',
   ink: '#1b4332',
   brand: '#1b4332',
-  brandMid: '#2d6a4f',
-  mintRow: '#eaf6ee',
+  leaf: '#52b788',
+  mintRow: '#e8f5ec',
   yellow: '#f2c94c',
   white: '#ffffff',
-  divider: '#d0ddd4',
+  divider: '#c5d5cb',
   free: '#b45309',
 };
 
@@ -74,50 +76,50 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
   return lines;
 }
 
-function loadImage(src: string): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
+    img.onerror = () => reject(new Error('No se pudo cargar el logo'));
     img.src = src;
   });
 }
 
-function assetUrl(file: string): string {
-  try {
-    return new URL(file, document.baseURI).href;
-  } catch {
-    return `./${file}`;
-  }
-}
-
 function drawBackdrop(ctx: CanvasRenderingContext2D) {
-  ctx.fillStyle = C.bg;
+  ctx.fillStyle = C.page;
   ctx.fillRect(0, 0, PAGE_W, PAGE_H);
+
   ctx.fillStyle = C.blob;
-  roundRect(ctx, -90, -110, 440, 380, 170);
+  roundRect(ctx, -120, -140, 520, 420, 180);
   ctx.fill();
-  roundRect(ctx, PAGE_W - 400, PAGE_H - 300, 480, 380, 170);
+  roundRect(ctx, PAGE_W - 420, -80, 480, 320, 160);
+  ctx.fill();
+  roundRect(ctx, PAGE_W - 460, PAGE_H - 340, 520, 420, 180);
+  ctx.fill();
+
+  ctx.fillStyle = C.blobSoft;
+  roundRect(ctx, -60, PAGE_H - 220, 280, 260, 120);
   ctx.fill();
 }
 
 function drawLeafMarks(ctx: CanvasRenderingContext2D, x: number, y: number) {
   ctx.save();
-  ctx.strokeStyle = C.brandMid;
-  ctx.lineWidth = 5;
-  ctx.lineCap = 'round';
+  ctx.fillStyle = C.leaf;
   [
-    { dx: 0, dy: -8, rot: -0.55 },
-    { dx: 18, dy: 2, rot: -0.12 },
-    { dx: 34, dy: 12, rot: 0.38 },
+    { dx: 0, dy: -8, rot: -0.7, s: 1 },
+    { dx: 16, dy: 2, rot: -0.2, s: 0.92 },
+    { dx: 30, dy: 12, rot: 0.4, s: 0.95 },
   ].forEach((m) => {
     ctx.save();
     ctx.translate(x + m.dx, y + m.dy);
     ctx.rotate(m.rot);
+    ctx.scale(m.s, m.s);
+    // Teardrop / sparkle like the reference
     ctx.beginPath();
-    ctx.moveTo(0, 9);
-    ctx.quadraticCurveTo(7, 0, 0, -11);
-    ctx.stroke();
+    ctx.moveTo(0, -12);
+    ctx.quadraticCurveTo(7, -2, 0, 12);
+    ctx.quadraticCurveTo(-7, -2, 0, -12);
+    ctx.fill();
     ctx.restore();
   });
   ctx.restore();
@@ -127,20 +129,20 @@ function drawIconCalendar(ctx: CanvasRenderingContext2D, cx: number, cy: number)
   ctx.save();
   ctx.translate(cx, cy);
   ctx.strokeStyle = C.white;
-  ctx.lineWidth = 2.4;
+  ctx.lineWidth = 2.6;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  roundRect(ctx, -9, -7, 18, 15, 2.5);
+  roundRect(ctx, -10, -7, 20, 16, 3);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(-9, -2);
-  ctx.lineTo(9, -2);
+  ctx.moveTo(-10, -2);
+  ctx.lineTo(10, -2);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(-4, -11);
-  ctx.lineTo(-4, -5);
-  ctx.moveTo(4, -11);
-  ctx.lineTo(4, -5);
+  ctx.moveTo(-4.5, -11);
+  ctx.lineTo(-4.5, -5);
+  ctx.moveTo(4.5, -11);
+  ctx.lineTo(4.5, -5);
   ctx.stroke();
   ctx.restore();
 }
@@ -149,16 +151,16 @@ function drawIconSun(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.strokeStyle = C.white;
-  ctx.lineWidth = 2.4;
+  ctx.lineWidth = 2.6;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.arc(0, 0, 4.2, 0, Math.PI * 2);
+  ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
   ctx.stroke();
   for (let i = 0; i < 8; i++) {
     const a = (i * Math.PI) / 4;
     ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * 6.8, Math.sin(a) * 6.8);
-    ctx.lineTo(Math.cos(a) * 10.2, Math.sin(a) * 10.2);
+    ctx.moveTo(Math.cos(a) * 7.2, Math.sin(a) * 7.2);
+    ctx.lineTo(Math.cos(a) * 10.8, Math.sin(a) * 10.8);
     ctx.stroke();
   }
   ctx.restore();
@@ -168,7 +170,7 @@ function drawIconUtensils(ctx: CanvasRenderingContext2D, cx: number, cy: number)
   ctx.save();
   ctx.translate(cx, cy);
   ctx.strokeStyle = C.white;
-  ctx.lineWidth = 2.4;
+  ctx.lineWidth = 2.6;
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(-5, -9);
@@ -190,11 +192,11 @@ function drawIconMoon(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.strokeStyle = C.white;
-  ctx.lineWidth = 2.4;
+  ctx.lineWidth = 2.6;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.arc(2, 0, 7.5, -0.85, Math.PI + 0.55);
-  ctx.arc(-1.5, -1.5, 6, 1.35, -1.05, true);
+  ctx.arc(2, 0, 7.8, -0.85, Math.PI + 0.55);
+  ctx.arc(-1.5, -1.5, 6.2, 1.35, -1.05, true);
   ctx.stroke();
   ctx.restore();
 }
@@ -202,67 +204,58 @@ function drawIconMoon(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
 function drawHeader(
   ctx: CanvasRenderingContext2D,
   input: InfographicInput,
-  icon: HTMLImageElement | null,
+  logo: HTMLImageElement,
   cardX: number,
   cardY: number,
   cardW: number
-) {
+): number {
   const { week, profileName, servings, kcal = 1500 } = input;
-  const pad = 48;
-  const logoSize = 96;
+  const pad = 52;
+  const logoSize = 108;
   const logoX = cardX + pad;
-  const logoY = cardY + 36;
+  const logoY = cardY + 40;
 
-  if (icon) {
-    roundRect(ctx, logoX, logoY, logoSize, logoSize, 22);
-    ctx.save();
-    ctx.clip();
-    ctx.drawImage(icon, logoX, logoY, logoSize, logoSize);
-    ctx.restore();
-  } else {
-    ctx.fillStyle = '#16a34a';
-    roundRect(ctx, logoX, logoY, logoSize, logoSize, 22);
-    ctx.fill();
-  }
+  // Logo mark (PNG embebido — nunca cuadrado verde vacío)
+  ctx.drawImage(logo, logoX, logoY, logoSize, logoSize);
 
   ctx.fillStyle = C.ink;
-  ctx.font = `800 28px ${FONT}`;
+  ctx.font = `800 30px ${FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.fillText('MiGordólogo', logoX + logoSize / 2, logoY + logoSize + 10);
+  ctx.fillText('MiGordólogo', logoX + logoSize / 2, logoY + logoSize + 12);
 
-  const sepX = logoX + logoSize + 36;
+  const sepX = logoX + logoSize + 40;
   ctx.strokeStyle = C.divider;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.moveTo(sepX, logoY + 8);
-  ctx.lineTo(sepX, logoY + logoSize + 28);
+  ctx.moveTo(sepX, logoY + 6);
+  ctx.lineTo(sepX, logoY + logoSize + 34);
   ctx.stroke();
 
-  const titleX = sepX + 36;
+  const titleX = sepX + 40;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C.ink;
-  ctx.font = `800 64px ${FONT}`;
-  ctx.fillText('Menú semanal', titleX, logoY + 52);
+  ctx.font = `800 68px ${FONT}`;
+  ctx.fillText('Menú semanal', titleX, logoY + 58);
   const titleW = ctx.measureText('Menú semanal').width;
-  drawLeafMarks(ctx, titleX + titleW + 18, logoY + 36);
+  drawLeafMarks(ctx, titleX + titleW + 20, logoY + 38);
 
   const pillText = `SEMANA ${week.weekNumber}  ·  ${profileName.toUpperCase()}  ·  ${
     servings === 1 ? '1 RACIÓN' : '2 RACIONES'
   }  ·  ${Number(kcal).toLocaleString('es-ES')} KCAL`;
-  ctx.font = `800 24px ${FONT}`;
-  const pillW = Math.min(ctx.measureText(pillText).width + 48, cardW - (titleX - cardX) - pad);
-  const pillH = 48;
-  const pillY = logoY + 72;
+  ctx.font = `800 26px ${FONT}`;
+  const pillW = Math.min(ctx.measureText(pillText).width + 52, cardX + cardW - pad - titleX);
+  const pillH = 52;
+  const pillY = logoY + 78;
   ctx.fillStyle = C.yellow;
-  roundRect(ctx, titleX, pillY, pillW, pillH, 24);
+  roundRect(ctx, titleX, pillY, pillW, pillH, 26);
   ctx.fill();
   ctx.fillStyle = C.ink;
   ctx.textBaseline = 'middle';
-  ctx.fillText(pillText, titleX + 24, pillY + pillH / 2, pillW - 40);
+  ctx.fillText(pillText, titleX + 26, pillY + pillH / 2, pillW - 44);
 
-  return logoY + logoSize + 56;
+  return Math.max(logoY + logoSize + 52, pillY + pillH + 28);
 }
 
 function drawTable(
@@ -273,19 +266,17 @@ function drawTable(
   w: number,
   h: number
 ) {
-  const dayW = 150;
-  const headerH = 72;
+  const dayW = 158;
+  const headerH = 76;
   const bodyH = h - headerH;
   const rowH = bodyH / 7;
   const mealW = (w - dayW) / 3;
-  const r = 28;
+  const r = 30;
 
-  // Clip rounded table
   ctx.save();
   roundRect(ctx, x, y, w, h, r);
   ctx.clip();
 
-  // Header bar
   ctx.fillStyle = C.brand;
   ctx.fillRect(x, y, w, headerH);
 
@@ -301,10 +292,10 @@ function drawTable(
   ];
 
   headers.forEach((col) => {
-    ctx.font = `800 28px ${FONT}`;
+    ctx.font = `800 30px ${FONT}`;
     const labelW = ctx.measureText(col.label).width;
-    const gap = 12;
-    const iconSlot = 22;
+    const gap = 14;
+    const iconSlot = 24;
     const blockW = iconSlot + gap + labelW;
     const start = col.cx - blockW / 2;
     col.icon(ctx, start + iconSlot / 2, y + headerH / 2);
@@ -321,23 +312,23 @@ function drawTable(
 
     const letter = DAY_LETTER[day.dayOfWeek] ?? DAY_LETTER[i];
     const name = DAY_NAME[day.dayOfWeek] ?? DAY_NAME[i];
-    const circleR = 28;
+    const circleR = 30;
     const cx = x + dayW / 2;
-    const cy = rowY + rowH / 2 - 10;
+    const cy = rowY + rowH / 2 - 12;
 
     ctx.fillStyle = C.brand;
     ctx.beginPath();
     ctx.arc(cx, cy, circleR, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = C.white;
-    ctx.font = `800 28px ${FONT}`;
+    ctx.font = `800 30px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(letter, cx, cy + 1);
 
     ctx.fillStyle = C.ink;
-    ctx.font = `800 16px ${FONT}`;
-    ctx.fillText(name, cx, cy + circleR + 16);
+    ctx.font = `800 17px ${FONT}`;
+    ctx.fillText(name, cx, cy + circleR + 18);
 
     const meals = [
       { key: 'breakfast' as const, ox: x + dayW },
@@ -358,15 +349,15 @@ function drawTable(
       }
       const title = mealTitle(day.meals[m.key], '—');
       ctx.fillStyle = C.ink;
-      ctx.font = `600 24px ${FONT}`;
+      ctx.font = `600 25px ${FONT}`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      const lines = wrapText(ctx, title, mealW - 48).slice(0, 3);
-      const lineH = 28;
+      const lines = wrapText(ctx, title, mealW - 52).slice(0, 3);
+      const lineH = 29;
       const blockH = lines.length * lineH;
       let ty = rowY + (rowH - blockH) / 2 + lineH / 2;
       lines.forEach((line) => {
-        ctx.fillText(line, m.ox + 28, ty, mealW - 48);
+        ctx.fillText(line, m.ox + 28, ty, mealW - 52);
         ty += lineH;
       });
     });
@@ -374,9 +365,8 @@ function drawTable(
 
   ctx.restore();
 
-  // Outer border
   ctx.strokeStyle = C.brand;
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 5;
   roundRect(ctx, x, y, w, h, r);
   ctx.stroke();
 }
@@ -389,16 +379,48 @@ function canvasToJpeg(canvas: HTMLCanvasElement): Promise<Blob> {
         else reject(new Error('No se pudo generar la imagen'));
       },
       'image/jpeg',
-      0.94
+      0.95
     );
   });
+}
+
+function emptyMeal(type: Meal['type'], recipeName: string): Meal {
+  return { type, recipeName, items: [], recipeUrl: null, totalCalories: null };
+}
+
+function sampleWeek(): WeekMenu {
+  const titles = [
+    ['Leche desnatada', 'Lentejas estofadas', 'Ensalada templada de arroz y pavo (plato único)'],
+    ['Yogur desnatado sin azúcar', 'Arroz a la cubana', 'Espinacas con conejo al horno'],
+    ['Café/infusión con leche desnatada', 'Verduras con carne', 'Sopa de fideos con tortilla'],
+    ['Queso fresco Burgos desnatado', 'Pasta al huevo con queso', 'Hervido de alcachofas con pollo'],
+    ['Leche desnatada', 'Cocido murciano', 'Crema de calabacín con huevo'],
+    ['Yogur desnatado sin azúcar', 'Estofado de ternera', 'Vichyssoise con jamón de pavo'],
+    ['Leche desnatada con canela', 'Ensalada de alubias (plato único)', 'Revuelto de champiñones con ensalada'],
+  ];
+  return {
+    weekNumber: 2,
+    days: titles.map((t, i) => ({
+      dayOfWeek: i,
+      dayLabel: DAY_NAME[i],
+      isFreeDay: false,
+      meals: {
+        breakfast: emptyMeal('breakfast', t[0]),
+        midMorning: emptyMeal('midMorning', ''),
+        lunch: emptyMeal('lunch', t[1]),
+        snack: emptyMeal('snack', ''),
+        dinner: emptyMeal('dinner', t[2]),
+        recena: emptyMeal('recena', ''),
+      },
+    })),
+  };
 }
 
 /**
  * JPEG 1600×1600 idéntico a la plantilla de menú semanal de referencia.
  */
 export async function buildWeekMenuInfographicPages(input: InfographicInput): Promise<Blob[]> {
-  const icon = await loadImage(assetUrl('icon-192.svg'));
+  const logo = await loadImage(LOGO_MARK_DATA_URL);
 
   const canvas = document.createElement('canvas');
   canvas.width = PAGE_W;
@@ -410,12 +432,12 @@ export async function buildWeekMenuInfographicPages(input: InfographicInput): Pr
 
   drawBackdrop(ctx);
 
-  const margin = 48;
+  const margin = 56;
   const cardX = margin;
   const cardY = margin;
   const cardW = PAGE_W - margin * 2;
   const cardH = PAGE_H - margin * 2;
-  const cardR = 40;
+  const cardR = 44;
 
   ctx.fillStyle = C.card;
   roundRect(ctx, cardX, cardY, cardW, cardH, cardR);
@@ -425,17 +447,29 @@ export async function buildWeekMenuInfographicPages(input: InfographicInput): Pr
   roundRect(ctx, cardX, cardY, cardW, cardH, cardR);
   ctx.stroke();
 
-  const headerBottom = drawHeader(ctx, input, icon, cardX, cardY, cardW);
+  const headerBottom = drawHeader(ctx, input, logo, cardX, cardY, cardW);
 
-  const tablePad = 40;
+  const tablePad = 44;
   const tableX = cardX + tablePad;
-  const tableY = headerBottom + 8;
+  const tableY = headerBottom;
   const tableW = cardW - tablePad * 2;
   const tableH = cardY + cardH - tablePad - tableY;
 
   drawTable(ctx, input.week, tableX, tableY, tableW, tableH);
 
   return [await canvasToJpeg(canvas)];
+}
+
+/** Solo para previsualización / QA local. */
+export async function buildSampleMenuInfographicBlob(): Promise<Blob> {
+  return (
+    await buildWeekMenuInfographicPages({
+      week: sampleWeek(),
+      profileName: 'Pepe',
+      servings: 1,
+      kcal: 1500,
+    })
+  )[0];
 }
 
 export async function shareWeekMenuInfographic(input: InfographicInput): Promise<'shared' | 'downloaded'> {

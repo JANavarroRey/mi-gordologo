@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Preview menú infographic</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #111;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+      }
+      img {
+        width: 800px;
+        height: 800px;
+        object-fit: contain;
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      import { buildSampleMenuInfographicBlob } from './src/domain/services/menuInfographicService.ts';
+      const blob = await buildSampleMenuInfographicBlob();
+      const url = URL.createObjectURL(blob);
+      const img = document.createElement('img');
+      img.id = 'out';
+      img.src = url;
+      document.body.appendChild(img);
+      // Expose for Playwright download
+      window.__menuBlob = blob;
+      window.__menuReady = true;
+    </script>
+  </body>
+</html>
