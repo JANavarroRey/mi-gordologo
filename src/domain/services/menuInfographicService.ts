@@ -10,15 +10,29 @@ type InfographicInput = {
 /** WhatsApp reescala cualquier lado > 1600 px y deja el texto ilegible. */
 const PAGE_W = 1600;
 const PAGE_H = 1600;
-const MARGIN = 28;
-const COL_GAP = 12;
-const DAY_W = 86;
-const HEADER_H = 78;
-const COL_HEAD_H = 34;
-const FOOTER_H = 42;
-const LINE = 20;
 
 const DAY_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+const DAY_FULL = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+const COLORS = {
+  bgTop: '#0f766e',
+  bgTop2: '#065f46',
+  bgBody: '#e8f5f0',
+  bgBody2: '#f0faf6',
+  card: '#ffffff',
+  ink: '#134e4a',
+  muted: '#5b7c76',
+  line: '#c7e4da',
+  breakfast: '#0d9488',
+  breakfastBg: '#ccfbf1',
+  lunch: '#047857',
+  lunchBg: '#d1fae5',
+  dinner: '#1e3a5f',
+  dinnerBg: '#e0e7ff',
+  free: '#b45309',
+  freeBg: '#fef3c7',
+  white: '#ffffff',
+};
 
 function scaleQuantity(qty: string | null, servings: number): string {
   if (!qty) return '';
@@ -33,38 +47,39 @@ function scaleQuantity(qty: string | null, servings: number): string {
   });
 }
 
-function splitLongWord(ctx: CanvasRenderingContext2D, word: string, maxWidth: number): string[] {
-  if (ctx.measureText(word).width <= maxWidth) return [word];
-  const parts: string[] = [];
-  let buf = '';
-  for (const ch of word) {
-    if (buf && ctx.measureText(buf + ch).width > maxWidth) {
-      parts.push(buf);
-      buf = ch;
-    } else {
-      buf += ch;
-    }
-  }
-  if (buf) parts.push(buf);
-  return parts.length ? parts : [word];
+function mealEmoji(meal: Meal | undefined, fallback: string): string {
+  const t = `${meal?.recipeName || ''} ${(meal?.items || []).map((i) => i.name).join(' ')}`.toLowerCase();
+  if (/pescado|merluza|dorada|lubina|salmón|salmon|atún|atun|caballa|sardina|calamar|sepia|gamba|mejillón|mejillon/.test(t))
+    return '🐟';
+  if (/pollo|pavo|ternera|carne|conejo|jamón|jamon/.test(t)) return '🍗';
+  if (/lenteja|garbanzo|alubia|legumbre|cocido|olla|potaje/.test(t)) return '🍲';
+  if (/arroz|paella|cuscús|couscous/.test(t)) return '🍚';
+  if (/pasta|fideo/.test(t)) return '🍝';
+  if (/ensalada|verdura|crema|calabacín|calabacin|espinaca|judía|judia|pisto|hervido/.test(t)) return '🥗';
+  if (/huevo|tortilla|revuelto/.test(t)) return '🥚';
+  if (/yogur|leche|queso/.test(t)) return '🥛';
+  if (/fruta|manzana|naranja|kiwi|pera|plátano|platano/.test(t)) return '🍎';
+  if (/patata/.test(t)) return '🥔';
+  return fallback;
 }
 
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-  const safeW = Math.max(24, maxWidth);
-  const words = text.split(/\s+/).flatMap((w) => splitLongWord(ctx, w, safeW));
-  const lines: string[] = [];
-  let current = '';
-  for (const word of words) {
-    const test = current ? `${current} ${word}` : word;
-    if (ctx.measureText(test).width > safeW && current) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = test;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
+function mealTitle(meal: Meal | undefined, fallback: string): string {
+  if (!meal) return fallback;
+  if (meal.recipeName?.trim()) return meal.recipeName.trim();
+  const first = meal.items?.[0]?.name;
+  return first || fallback;
+}
+
+function topItems(meal: Meal | undefined, servings: number, max = 3): string[] {
+  if (!meal?.items?.length) return [];
+  const skip = /^(postre|aceite de oliva)/i;
+  return meal.items
+    .filter((i) => i.name && !skip.test(i.name))
+    .slice(0, max)
+    .map((i: MealItem) => {
+      const qty = scaleQuantity(i.quantity, servings);
+      return qty ? `${i.name} · ${qty}` : i.name;
+    });
 }
 
 function roundRect(
@@ -80,117 +95,258 @@ function roundRect(
   ctx.moveTo(x + radius, y);
   ctx.arcTo(x + w, y, x + w, y + h, radius);
   ctx.arcTo(x + w, y + h, x, y + h, radius);
-  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x + w, y + h, x, y, radius);
   ctx.arcTo(x, y, x + w, y, radius);
   ctx.closePath();
 }
 
-type ColBlock = { lines: string[]; titleCount: number };
-
-function mealBlock(
-  ctx: CanvasRenderingContext2D,
-  meal: Meal | undefined,
-  colW: number,
-  servings: number,
-  withTitle: boolean
-): ColBlock {
-  if (!meal) return { lines: [], titleCount: 0 };
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(/\s+/);
   const lines: string[] = [];
-  ctx.font = '700 16px system-ui, Segoe UI, sans-serif';
-  if (withTitle && meal.recipeName) {
-    lines.push(...wrapText(ctx, meal.recipeName, colW));
+  let current = '';
+  for (const word of words) {
+    const test = current ? `${current} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = test;
+    }
   }
-  const titleCount = lines.length;
-  ctx.font = '500 15px system-ui, Segoe UI, sans-serif';
-  (meal.items || []).forEach((item: MealItem) => {
-    const qty = scaleQuantity(item.quantity, servings);
-    const text = qty ? `• ${item.name} (${qty})` : `• ${item.name}`;
-    lines.push(...wrapText(ctx, text, colW));
-  });
-  return { lines, titleCount };
+  if (current) lines.push(current);
+  return lines;
 }
 
-function drawClippedLines(
+function drawBackdrop(ctx: CanvasRenderingContext2D) {
+  const g = ctx.createLinearGradient(0, 0, 0, PAGE_H);
+  g.addColorStop(0, COLORS.bgBody);
+  g.addColorStop(1, COLORS.bgBody2);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, PAGE_W, PAGE_H);
+
+  // Soft decorative blobs (atmosphere, not content)
+  ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+  ctx.beginPath();
+  ctx.arc(140, 180, 220, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(13, 148, 136, 0.07)';
+  ctx.beginPath();
+  ctx.arc(PAGE_W - 80, PAGE_H - 200, 280, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawHeader(ctx: CanvasRenderingContext2D, input: InfographicInput, pageIndex: number, pageCount: number) {
+  const { week, profileName, servings, kcal = 1500 } = input;
+  const h = 168;
+  const hg = ctx.createLinearGradient(0, 0, PAGE_W, h);
+  hg.addColorStop(0, COLORS.bgTop2);
+  hg.addColorStop(0.55, COLORS.bgTop);
+  hg.addColorStop(1, '#115e59');
+  ctx.fillStyle = hg;
+  ctx.fillRect(0, 0, PAGE_W, h);
+
+  // Soft highlight arc
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.beginPath();
+  ctx.ellipse(PAGE_W * 0.75, -40, 420, 180, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(236,253,245,0.9)';
+  ctx.font = '700 22px "Segoe UI", system-ui, sans-serif';
+  ctx.fillText('MI GORDÓLOGO', 56, 48);
+
+  ctx.fillStyle = COLORS.white;
+  ctx.font = '800 54px "Segoe UI", system-ui, sans-serif';
+  ctx.fillText('Menú de la semana', 56, 108);
+
+  const kcalLabel = `${Number(kcal).toLocaleString('es-ES')} kcal`;
+  const meta = `Semana ${week.weekNumber}  ·  ${profileName}  ·  ${servings === 1 ? '1 ración' : '2 raciones'}  ·  ${kcalLabel}${
+    pageCount > 1 ? `  ·  ${pageIndex + 1}/${pageCount}` : ''
+  }`;
+  ctx.font = '600 22px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(209,250,229,0.95)';
+  ctx.fillText(meta, 56, 144);
+
+  // Brand chip right
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  roundRect(ctx, PAGE_W - 220, 48, 164, 72, 18);
+  ctx.fill();
+  ctx.textAlign = 'center';
+  ctx.fillStyle = COLORS.white;
+  ctx.font = '800 36px "Segoe UI", system-ui, sans-serif';
+  ctx.fillText('🌿', PAGE_W - 138, 78);
+  ctx.font = '700 16px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(236,253,245,0.95)';
+  ctx.fillText('Hospital 1.500', PAGE_W - 138, 106);
+}
+
+function drawFooter(ctx: CanvasRenderingContext2D, kcal: number) {
+  const h = 56;
+  const y = PAGE_H - h;
+  ctx.fillStyle = 'rgba(6, 78, 59, 0.92)';
+  ctx.fillRect(0, y, PAGE_W, h);
+  ctx.fillStyle = 'rgba(236,253,245,0.95)';
+  ctx.font = '700 18px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(
+    `Mi Gordólogo  ·  Estimación del menú ${Number(kcal).toLocaleString('es-ES')} kcal/día  ·  Ideal para WhatsApp`,
+    PAGE_W / 2,
+    y + h / 2
+  );
+}
+
+type MealSlot = {
+  label: string;
+  emoji: string;
+  title: string;
+  items: string[];
+  accent: string;
+  bg: string;
+};
+
+function buildSlots(day: WeekMenu['days'][number], servings: number): MealSlot[] {
+  return [
+    {
+      label: 'Desayuno',
+      emoji: mealEmoji(day.meals.breakfast, '🌅'),
+      title: mealTitle(day.meals.breakfast, 'Desayuno'),
+      items: topItems(day.meals.breakfast, servings, 2),
+      accent: COLORS.breakfast,
+      bg: COLORS.breakfastBg,
+    },
+    {
+      label: 'Comida',
+      emoji: mealEmoji(day.meals.lunch, '🍽️'),
+      title: mealTitle(day.meals.lunch, 'Comida'),
+      items: topItems(day.meals.lunch, servings, 3),
+      accent: COLORS.lunch,
+      bg: COLORS.lunchBg,
+    },
+    {
+      label: 'Cena',
+      emoji: mealEmoji(day.meals.dinner, '🌙'),
+      title: mealTitle(day.meals.dinner, 'Cena'),
+      items: topItems(day.meals.dinner, servings, 3),
+      accent: COLORS.dinner,
+      bg: COLORS.dinnerBg,
+    },
+  ];
+}
+
+function drawMealChip(
   ctx: CanvasRenderingContext2D,
-  block: ColBlock,
+  slot: MealSlot,
   x: number,
   y: number,
   w: number,
-  maxY: number
-): void {
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x, y - 2, w, Math.max(0, maxY - y + 2));
-  ctx.clip();
+  h: number
+) {
+  ctx.fillStyle = slot.bg;
+  roundRect(ctx, x, y, w, h, 16);
+  ctx.fill();
+
+  // Accent bar
+  ctx.fillStyle = slot.accent;
+  roundRect(ctx, x, y, 10, h, 16);
+  ctx.fill();
+  ctx.fillStyle = slot.bg;
+  ctx.fillRect(x + 6, y, 8, h);
+
   ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  let ty = y;
-  block.lines.forEach((line, i) => {
-    if (ty + LINE > maxY) return;
-    const isTitle = i < block.titleCount;
-    ctx.font = isTitle
-      ? '700 16px system-ui, Segoe UI, sans-serif'
-      : '500 15px system-ui, Segoe UI, sans-serif';
-    ctx.fillStyle = isTitle ? '#064e3b' : '#1e293b';
-    ctx.fillText(line, x, ty, w);
-    ty += LINE;
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = '700 15px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = slot.accent;
+  ctx.fillText(`${slot.emoji}  ${slot.label.toUpperCase()}`, x + 22, y + 26);
+
+  ctx.fillStyle = COLORS.ink;
+  ctx.font = '800 20px "Segoe UI", system-ui, sans-serif';
+  const titleLines = wrapText(ctx, slot.title, w - 36).slice(0, 2);
+  let ty = y + 52;
+  titleLines.forEach((line) => {
+    ctx.fillText(line, x + 22, ty, w - 36);
+    ty += 24;
   });
-  ctx.restore();
+
+  ctx.font = '500 15px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = COLORS.muted;
+  slot.items.forEach((item) => {
+    const lines = wrapText(ctx, item, w - 36).slice(0, 1);
+    lines.forEach((line) => {
+      ctx.fillText(line, x + 22, ty, w - 36);
+      ty += 20;
+    });
+  });
 }
 
-function drawPageChrome(
+function drawDayCard(
   ctx: CanvasRenderingContext2D,
-  input: InfographicInput,
-  pageIndex: number,
-  pageCount: number,
-  innerW: number,
-  colW: number,
-  mealsX: number
-): void {
-  const { week, profileName, servings, kcal = 1500 } = input;
-  ctx.fillStyle = '#f4f7f5';
-  ctx.fillRect(0, 0, PAGE_W, PAGE_H);
-
-  const headerGrad = ctx.createLinearGradient(0, 0, PAGE_W, HEADER_H);
-  headerGrad.addColorStop(0, '#065f46');
-  headerGrad.addColorStop(1, '#0f766e');
-  ctx.fillStyle = headerGrad;
-  ctx.fillRect(0, 0, PAGE_W, HEADER_H);
-
-  ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '800 32px system-ui, Segoe UI, sans-serif';
-  ctx.fillText('Menú de la semana', PAGE_W / 2, 36);
-  ctx.font = '600 18px system-ui, Segoe UI, sans-serif';
-  ctx.fillStyle = 'rgba(236,253,245,0.95)';
-  const pageHint = pageCount > 1 ? `  ·  ${pageIndex + 1}/${pageCount}` : '';
-  ctx.fillText(
-    `Semana ${week.weekNumber} · ${profileName} · ${servings === 1 ? '1 ración' : '2 raciones'} · ${kcal} kcal${pageHint}`,
-    PAGE_W / 2,
-    62
-  );
-
-  const headY = HEADER_H + 8;
-  ctx.fillStyle = '#ffffff';
-  roundRect(ctx, MARGIN, headY, innerW, COL_HEAD_H, 10);
+  day: WeekMenu['days'][number],
+  idx: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  servings: number
+) {
+  // Shadow
+  ctx.fillStyle = 'rgba(6, 78, 59, 0.08)';
+  roundRect(ctx, x + 4, y + 6, w, h, 22);
   ctx.fill();
-  ctx.fillStyle = '#115e59';
-  ctx.font = '800 14px system-ui, Segoe UI, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('DÍA', MARGIN + DAY_W / 2, headY + COL_HEAD_H / 2);
-  ctx.fillText('DESAYUNO', mealsX + colW / 2, headY + COL_HEAD_H / 2);
-  ctx.fillText('COMIDA', mealsX + colW + COL_GAP + colW / 2, headY + COL_HEAD_H / 2);
-  ctx.fillText('CENA', mealsX + (colW + COL_GAP) * 2 + colW / 2, headY + COL_HEAD_H / 2);
 
-  ctx.fillStyle = '#ecfdf5';
-  ctx.fillRect(0, PAGE_H - FOOTER_H, PAGE_W, FOOTER_H);
-  ctx.fillStyle = '#047857';
-  ctx.font = '700 16px system-ui, Segoe UI, sans-serif';
+  ctx.fillStyle = COLORS.card;
+  roundRect(ctx, x, y, w, h, 22);
+  ctx.fill();
+  ctx.strokeStyle = COLORS.line;
+  ctx.lineWidth = 2;
+  roundRect(ctx, x, y, w, h, 22);
+  ctx.stroke();
+
+  const short = DAY_SHORT[day.dayOfWeek] ?? DAY_SHORT[idx];
+  const full = DAY_FULL[day.dayOfWeek] ?? day.dayLabel;
+
+  // Day badge
+  const badgeG = ctx.createLinearGradient(x, y, x + 120, y + h);
+  badgeG.addColorStop(0, COLORS.bgTop2);
+  badgeG.addColorStop(1, COLORS.bgTop);
+  ctx.fillStyle = badgeG;
+  roundRect(ctx, x, y, 118, h, 22);
+  ctx.fill();
+  ctx.fillStyle = COLORS.card;
+  ctx.fillRect(x + 100, y, 22, h);
+
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('Mi Gordólogo · Pauta 1.500 kcal · texto nítido para WhatsApp', PAGE_W / 2, PAGE_H - FOOTER_H / 2);
+  ctx.fillStyle = COLORS.white;
+  ctx.font = '800 34px "Segoe UI", system-ui, sans-serif';
+  ctx.fillText(short.toUpperCase(), x + 52, y + h / 2 - 8);
+  ctx.font = '600 16px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(236,253,245,0.9)';
+  ctx.fillText(full, x + 52, y + h / 2 + 22);
+
+  if (day.isFreeDay) {
+    ctx.fillStyle = COLORS.freeBg;
+    roundRect(ctx, x + 130, y + 18, w - 148, h - 36, 16);
+    ctx.fill();
+    ctx.textAlign = 'left';
+    ctx.fillStyle = COLORS.free;
+    ctx.font = '800 28px "Segoe UI", system-ui, sans-serif';
+    ctx.fillText('🎉  Día libre', x + 160, y + h / 2 - 6);
+    ctx.font = '600 18px "Segoe UI", system-ui, sans-serif';
+    ctx.fillText('Sin menú pautado — a disfrutar', x + 160, y + h / 2 + 26);
+    return;
+  }
+
+  const slots = buildSlots(day, servings);
+  const gap = 14;
+  const chipX = x + 130;
+  const chipArea = w - 148;
+  const chipW = (chipArea - gap * 2) / 3;
+  const chipH = h - 28;
+  slots.forEach((slot, i) => {
+    drawMealChip(ctx, slot, chipX + i * (chipW + gap), y + 14, chipW, chipH);
+  });
 }
 
 function canvasToJpeg(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -201,81 +357,26 @@ function canvasToJpeg(canvas: HTMLCanvasElement): Promise<Blob> {
         else reject(new Error('No se pudo generar la imagen'));
       },
       'image/jpeg',
-      0.92
+      0.93
     );
   });
 }
 
 /**
- * JPEG 1600×1600 (límite de WhatsApp) con la misma info que la tabla.
- * Si no cabe, se parte en varias páginas para no perder nitidez.
+ * JPEG 1600×1600 visual (límite WhatsApp): tarjetas por día con emoji y platos destacados.
  */
 export async function buildWeekMenuInfographicPages(input: InfographicInput): Promise<Blob[]> {
-  const { week, servings } = input;
-  const probe = document.createElement('canvas').getContext('2d');
-  if (!probe) throw new Error('Canvas no disponible');
-
-  const innerW = PAGE_W - MARGIN * 2;
-  const mealsW = innerW - DAY_W - 12;
-  const colW = (mealsW - COL_GAP * 2) / 3;
-  const mealsX = MARGIN + DAY_W + 12;
-  const bodyTop = HEADER_H + 8 + COL_HEAD_H + 10;
-  const bodyBottom = PAGE_H - FOOTER_H - 12;
-  const usable = bodyBottom - bodyTop;
-
-  type DayPack = {
-    dayLabel: string;
-    short: string;
-    isFreeDay: boolean;
-    breakfast: ColBlock;
-    lunch: ColBlock;
-    dinner: ColBlock;
-    height: number;
-  };
-
-  const packs: DayPack[] = week.days.map((d, idx) => {
-    const short = DAY_SHORT[d.dayOfWeek] ?? DAY_SHORT[idx] ?? d.dayLabel.slice(0, 3);
-    if (d.isFreeDay) {
-      return {
-        dayLabel: d.dayLabel,
-        short,
-        isFreeDay: true,
-        breakfast: { lines: [], titleCount: 0 },
-        lunch: { lines: [], titleCount: 0 },
-        dinner: { lines: [], titleCount: 0 },
-        height: 56,
-      };
-    }
-    const breakfast = mealBlock(probe, d.meals.breakfast, colW - 10, servings, false);
-    const lunch = mealBlock(probe, d.meals.lunch, colW - 10, servings, true);
-    const dinner = mealBlock(probe, d.meals.dinner, colW - 10, servings, true);
-    const contentH = Math.max(breakfast.lines.length, lunch.lines.length, dinner.lines.length, 2) * LINE;
-    return {
-      dayLabel: d.dayLabel,
-      short,
-      isFreeDay: false,
-      breakfast,
-      lunch,
-      dinner,
-      height: Math.min(contentH + 16, usable),
-    };
-  });
-
-  const pages: DayPack[][] = [];
-  let current: DayPack[] = [];
-  let used = 0;
-  const gap = 8;
-  for (const pack of packs) {
-    const need = pack.height + gap;
-    if (current.length && used + need > usable) {
-      pages.push(current);
-      current = [];
-      used = 0;
-    }
-    current.push(pack);
-    used += need;
+  const { week, servings, kcal = 1500 } = input;
+  const HEADER = 168;
+  const FOOTER = 56;
+  const MARGIN = 36;
+  const GAP = 14;
+  const usableH = PAGE_H - HEADER - FOOTER - MARGIN * 2;
+  const daysPerPage = 4;
+  const pages: (typeof week.days)[] = [];
+  for (let i = 0; i < week.days.length; i += daysPerPage) {
+    pages.push(week.days.slice(i, i + daysPerPage));
   }
-  if (current.length) pages.push(current);
 
   const blobs: Blob[] = [];
   for (let p = 0; p < pages.length; p++) {
@@ -287,55 +388,20 @@ export async function buildWeekMenuInfographicPages(input: InfographicInput): Pr
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
 
-    drawPageChrome(ctx, input, p, pages.length, innerW, colW, mealsX);
+    drawBackdrop(ctx);
+    drawHeader(ctx, input, p, pages.length);
 
-    let y = bodyTop;
-    pages[p].forEach((pack, idx) => {
-      const cardH = pack.height;
-      if (pack.isFreeDay) {
-        ctx.fillStyle = '#fffbeb';
-        roundRect(ctx, MARGIN, y, innerW, cardH, 12);
-        ctx.fill();
-        ctx.strokeStyle = '#fcd34d';
-        ctx.lineWidth = 1.5;
-        roundRect(ctx, MARGIN, y, innerW, cardH, 12);
-        ctx.stroke();
-        ctx.fillStyle = '#92400e';
-        ctx.font = '700 18px system-ui, Segoe UI, sans-serif';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`${pack.short}  ·  Día libre — sin menú pautado`, MARGIN + 16, y + cardH / 2, innerW - 32);
-        y += cardH + gap;
-        return;
-      }
-
-      ctx.fillStyle = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-      roundRect(ctx, MARGIN, y, innerW, cardH, 12);
-      ctx.fill();
-      ctx.strokeStyle = '#d1fae5';
-      ctx.lineWidth = 1;
-      roundRect(ctx, MARGIN, y, innerW, cardH, 12);
-      ctx.stroke();
-
-      ctx.fillStyle = '#047857';
-      roundRect(ctx, MARGIN + 8, y + 8, DAY_W - 10, Math.min(36, cardH - 16), 8);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '800 16px system-ui, Segoe UI, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(pack.short, MARGIN + 8 + (DAY_W - 10) / 2, y + 8 + Math.min(36, cardH - 16) / 2, DAY_W - 14);
-
-      const textY = y + 8;
-      const maxY = y + cardH - 6;
-      const textW = colW - 10;
-      drawClippedLines(ctx, pack.breakfast, mealsX, textY, textW, maxY);
-      drawClippedLines(ctx, pack.lunch, mealsX + colW + COL_GAP, textY, textW, maxY);
-      drawClippedLines(ctx, pack.dinner, mealsX + (colW + COL_GAP) * 2, textY, textW, maxY);
-
-      y += cardH + gap;
+    const slice = pages[p];
+    const cardH = Math.floor((usableH - GAP * (slice.length - 1)) / slice.length);
+    const cardW = PAGE_W - MARGIN * 2;
+    let y = HEADER + MARGIN;
+    slice.forEach((day, idx) => {
+      const globalIdx = p * daysPerPage + idx;
+      drawDayCard(ctx, day, globalIdx, MARGIN, y, cardW, cardH, servings);
+      y += cardH + GAP;
     });
 
+    drawFooter(ctx, kcal);
     blobs.push(await canvasToJpeg(canvas));
   }
 
