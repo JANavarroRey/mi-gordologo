@@ -58,7 +58,12 @@ function ensureBuiltinProfiles(profiles: UserProfile[]): UserProfile[] {
   }
   next = next.map((p) => {
     if (p.id === SUPERADMIN_PROFILE_ID) {
-      return { ...p, linkedMenuUserId: null, role: 'superadmin' as const };
+      return {
+        ...p,
+        linkedMenuUserId: null,
+        role: 'superadmin' as const,
+        targetCalories: 1500,
+      };
     }
     return p.role ? p : { ...p, role: 'member' as const };
   });
@@ -446,10 +451,11 @@ export const storageService = {
   getMenuDisplayKcal(userId?: string): number {
     const id = userId || this.getActiveUserId();
     const profile = this.getProfileById(id);
-    const fromIntake = profile?.foodIntake?.estimatedDailyKcal;
-    if (fromIntake && fromIntake > 0) return fromIntake;
+    // Prioriza la kcal del menú actual (seed / PDF / hábitos), no un estimado antiguo del cuestionario.
     const stored = Number(localStorage.getItem(`${STORAGE_KEYS.MENUS}_${id}_display_kcal`) || 0);
     if (stored > 0) return stored;
+    const fromIntake = profile?.foodIntake?.estimatedDailyKcal;
+    if (fromIntake && fromIntake > 0) return fromIntake;
     return profile?.targetCalories || 1500;
   },
 
@@ -468,7 +474,7 @@ export const storageService = {
 
   /** Aplica el menú hospitalario 1.500 kcal a todos los perfiles (inicio común). */
   forceHospitalSeedOnAllProfiles(): string[] {
-    const CURRENT_VERSION = 'v2026_hospital_balance_v1';
+    const CURRENT_VERSION = 'v2026_hospital_balance_v2';
     localStorage.setItem(STORAGE_KEYS.SEED_VERSION, CURRENT_VERSION);
     const seed = scaleWeekMenus(getHospitalMenuSeed(), 1500);
     const touched: string[] = [];
@@ -477,36 +483,30 @@ export const storageService = {
       localStorage.setItem(`${STORAGE_KEYS.MENUS}_${p.id}_edited`, '0');
       localStorage.setItem(`${STORAGE_KEYS.MENUS}_${p.id}_kcal`, '1500');
       localStorage.setItem(`${STORAGE_KEYS.MENUS}_${p.id}_display_kcal`, '1500');
-      const baselineIntake =
+      const hospitalIntake = {
+        completedAt: new Date().toISOString(),
+        mealsEaten: ['breakfast', 'midMorning', 'lunch', 'snack', 'dinner', 'recena'] as const,
+        sport: 'none' as const,
+        sportDays: 0,
+        likes: [] as string[],
+        dislikes: [] as string[],
+        allergies: '',
+        notes: 'Menú hospitalario Morales Meseguer 1.500 kcal (base común).',
+        importedFromPdf: false,
+        estimatedDailyKcal: 1500,
+      };
+      const nextIntake =
         p.id === 'maria_ignacia' || p.id === SUPERADMIN_PROFILE_ID
-          ? {
-              completedAt: new Date().toISOString(),
-              mealsEaten: ['breakfast', 'midMorning', 'lunch', 'snack', 'dinner', 'recena'],
-              sport: 'none' as const,
-              sportDays: 0,
-              likes: [] as string[],
-              dislikes: [] as string[],
-              allergies: '',
-              notes: 'Menú hospitalario Morales Meseguer 1.500 kcal (base común).',
-              importedFromPdf: false,
-              estimatedDailyKcal: 1500,
-            }
-          : p.foodIntake?.importedFromPdf
+          ? hospitalIntake
+          : p.foodIntake
             ? { ...p.foodIntake, importedFromPdf: false, estimatedDailyKcal: 1500 }
-            : p.foodIntake;
-      if (baselineIntake) {
-        this.upsertProfile({
-          ...p,
-          targetCalories: p.id === 'maria_ignacia' || p.id === SUPERADMIN_PROFILE_ID ? 1500 : p.targetCalories,
-          foodIntake: baselineIntake,
-          linkedMenuUserId: p.id === SUPERADMIN_PROFILE_ID ? null : p.linkedMenuUserId,
-        });
-      } else {
-        this.upsertProfile({
-          ...p,
-          linkedMenuUserId: p.id === SUPERADMIN_PROFILE_ID ? null : p.linkedMenuUserId,
-        });
-      }
+            : null;
+      this.upsertProfile({
+        ...p,
+        targetCalories: 1500,
+        foodIntake: nextIntake,
+        linkedMenuUserId: p.id === SUPERADMIN_PROFILE_ID ? null : p.linkedMenuUserId,
+      });
       touched.push(p.id);
     }
     this.resetShoppingListsForMenuChange();
@@ -516,7 +516,7 @@ export const storageService = {
 
   /** true si el seed local no es la versión hospitalaria actual. */
   needsHospitalSeedReset(): boolean {
-    return localStorage.getItem(STORAGE_KEYS.SEED_VERSION) !== 'v2026_hospital_balance_v1';
+    return localStorage.getItem(STORAGE_KEYS.SEED_VERSION) !== 'v2026_hospital_balance_v2';
   },
 
   updateDayMenu(weekIndex: number, dayIndex: number, updatedDay: WeekMenu['days'][0], userId?: string): void {
