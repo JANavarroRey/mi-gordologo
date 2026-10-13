@@ -8,11 +8,11 @@ type InfographicInput = {
   kcal?: number;
 };
 
-/** WhatsApp reescala cualquier lado > 1600 px. */
-const PAGE_W = 1600;
+/** Formato vertical para móvil. WhatsApp reescala cualquier lado > 1600 px. */
+const PAGE_W = 1080;
 const PAGE_H = 1600;
 /** Radio exterior de la imagen completa (como la plantilla). */
-const OUTER_R = 72;
+const OUTER_R = 56;
 
 const DAY_LETTER = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 const DAY_NAME = ['LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO', 'DOMINGO'];
@@ -233,47 +233,47 @@ function drawHeader(
   cardW: number
 ): number {
   const { week, profileName, servings, kcal = 1500 } = input;
-  const pad = 52;
-  const logoSize = 168;
+  const pad = 32;
+  const logoSize = 112;
   const logoX = cardX + pad;
-  const logoY = cardY + 36;
+  const logoY = cardY + 28;
 
   drawBrandLogo(ctx, logo, logoX, logoY, logoSize);
 
   const brandBottom = logoY + logoSize;
-  const sepX = logoX + logoSize + 36;
+  const sepX = logoX + logoSize + 22;
   ctx.strokeStyle = C.divider;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(sepX, logoY + 10);
-  ctx.lineTo(sepX, brandBottom - 10);
+  ctx.moveTo(sepX, logoY + 8);
+  ctx.lineTo(sepX, brandBottom - 8);
   ctx.stroke();
 
-  const titleX = sepX + 36;
-  const titleMidY = logoY + logoSize * 0.36;
+  const titleX = sepX + 22;
+  const titleMidY = logoY + logoSize * 0.34;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = C.ink;
-  ctx.font = `800 68px ${FONT}`;
+  ctx.font = `800 44px ${FONT}`;
   ctx.fillText('Menú semanal', titleX, titleMidY);
   const titleW = ctx.measureText('Menú semanal').width;
-  drawLeafMarks(ctx, titleX + titleW + 20, titleMidY - 22);
+  drawLeafMarks(ctx, titleX + titleW + 12, titleMidY - 16);
 
   const pillText = `SEMANA ${week.weekNumber}  ·  ${profileName.toUpperCase()}  ·  ${
-    servings === 1 ? '1 RACIÓN' : '2 RACIONES'
+    servings === 1 ? '1 RAC.' : '2 RAC.'
   }  ·  ${Number(kcal).toLocaleString('es-ES')} KCAL`;
-  ctx.font = `800 26px ${FONT}`;
-  const pillW = Math.min(ctx.measureText(pillText).width + 56, cardX + cardW - pad - titleX);
-  const pillH = 54;
-  const pillY = titleMidY + 38;
+  ctx.font = `800 20px ${FONT}`;
+  const pillW = Math.min(ctx.measureText(pillText).width + 40, cardX + cardW - pad - titleX);
+  const pillH = 42;
+  const pillY = titleMidY + 28;
   ctx.fillStyle = C.yellow;
   roundRect(ctx, titleX, pillY, pillW, pillH, pillH / 2);
   ctx.fill();
   ctx.fillStyle = C.ink;
   ctx.textBaseline = 'middle';
-  ctx.fillText(pillText, titleX + 28, pillY + pillH / 2, pillW - 48);
+  ctx.fillText(pillText, titleX + 20, pillY + pillH / 2, pillW - 36);
 
-  return Math.max(brandBottom + 28, pillY + pillH + 28);
+  return Math.max(brandBottom + 24, pillY + pillH + 24);
 }
 
 function drawTable(
@@ -284,12 +284,12 @@ function drawTable(
   w: number,
   h: number
 ) {
-  const dayW = 160;
-  const headerH = 78;
+  const dayW = 104;
+  const headerH = 64;
   const bodyH = h - headerH;
   const rowH = bodyH / 7;
   const mealW = (w - dayW) / 3;
-  const r = 36;
+  const r = 28;
 
   ctx.save();
   roundRect(ctx, x, y, w, h, r);
@@ -310,10 +310,10 @@ function drawTable(
   ];
 
   headers.forEach((col) => {
-    ctx.font = `800 30px ${FONT}`;
+    ctx.font = `800 22px ${FONT}`;
     const labelW = ctx.measureText(col.label).width;
-    const gap = 14;
-    const iconSlot = 24;
+    const gap = 8;
+    const iconSlot = 20;
     const blockW = iconSlot + gap + labelW;
     const start = col.cx - blockW / 2;
     col.icon(ctx, start + iconSlot / 2, y + headerH / 2);
@@ -330,23 +330,23 @@ function drawTable(
 
     const letter = DAY_LETTER[day.dayOfWeek] ?? DAY_LETTER[i];
     const name = DAY_NAME[day.dayOfWeek] ?? DAY_NAME[i];
-    const circleR = 32;
+    const circleR = Math.min(28, rowH * 0.28);
     const cx = x + dayW / 2;
-    const cy = rowY + rowH / 2 - 14;
+    const cy = rowY + rowH / 2 - 12;
 
     ctx.fillStyle = C.brand;
     ctx.beginPath();
     ctx.arc(cx, cy, circleR, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = C.white;
-    ctx.font = `800 30px ${FONT}`;
+    ctx.font = `800 24px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(letter, cx, cy + 1);
 
     ctx.fillStyle = C.ink;
-    ctx.font = `800 18px ${FONT}`;
-    ctx.fillText(name, cx, cy + circleR + 18);
+    ctx.font = `800 14px ${FONT}`;
+    ctx.fillText(name, cx, cy + circleR + 14);
 
     const meals = [
       { key: 'breakfast' as const, ox: x + dayW },
@@ -358,24 +358,24 @@ function drawTable(
       if (day.isFreeDay) {
         if (m.key === 'lunch') {
           ctx.fillStyle = C.free;
-          ctx.font = `700 26px ${FONT}`;
+          ctx.font = `700 20px ${FONT}`;
           ctx.textAlign = 'left';
           ctx.textBaseline = 'middle';
-          ctx.fillText('Día libre', m.ox + 28, rowY + rowH / 2);
+          ctx.fillText('Día libre', m.ox + 16, rowY + rowH / 2);
         }
         return;
       }
       const title = mealTitle(day.meals[m.key], '—');
       ctx.fillStyle = C.ink;
-      ctx.font = `600 25px ${FONT}`;
+      ctx.font = `600 20px ${FONT}`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      const lines = wrapText(ctx, title, mealW - 52).slice(0, 3);
-      const lineH = 29;
+      const lines = wrapText(ctx, title, mealW - 28).slice(0, 4);
+      const lineH = 24;
       const blockH = lines.length * lineH;
       let ty = rowY + (rowH - blockH) / 2 + lineH / 2;
       lines.forEach((line) => {
-        ctx.fillText(line, m.ox + 28, ty, mealW - 52);
+        ctx.fillText(line, m.ox + 14, ty, mealW - 28);
         ty += lineH;
       });
     });
@@ -384,7 +384,7 @@ function drawTable(
   ctx.restore();
 
   ctx.strokeStyle = C.brand;
-  ctx.lineWidth = 5;
+  ctx.lineWidth = 4;
   roundRect(ctx, x, y, w, h, r);
   ctx.stroke();
 }
@@ -434,7 +434,7 @@ function sampleWeek(): WeekMenu {
 }
 
 /**
- * PNG 1600×1600 con esquinas redondeadas — plantilla de menú semanal de referencia.
+ * PNG vertical 1080×1600 (móvil) con esquinas redondeadas.
  */
 export async function buildWeekMenuInfographicPages(input: InfographicInput): Promise<Blob[]> {
   const logo = await loadImage(LOGO_JPG_DATA_URL);
@@ -456,29 +456,29 @@ export async function buildWeekMenuInfographicPages(input: InfographicInput): Pr
   // Fondo menta + blobs orgánicos
   ctx.fillStyle = C.page;
   ctx.fillRect(0, 0, PAGE_W, PAGE_H);
-  drawOrganicBlob(ctx, 80, 60, 340, 280, C.blob);
-  drawOrganicBlob(ctx, PAGE_W - 60, 40, 300, 240, C.blobSoft);
-  drawOrganicBlob(ctx, PAGE_W - 40, PAGE_H - 80, 380, 300, C.blob);
-  drawOrganicBlob(ctx, 40, PAGE_H - 40, 220, 180, C.blobSoft);
+  drawOrganicBlob(ctx, 40, 40, 220, 180, C.blob);
+  drawOrganicBlob(ctx, PAGE_W - 40, 30, 200, 160, C.blobSoft);
+  drawOrganicBlob(ctx, PAGE_W - 30, PAGE_H - 60, 260, 220, C.blob);
+  drawOrganicBlob(ctx, 30, PAGE_H - 30, 160, 140, C.blobSoft);
 
-  const margin = 48;
+  const margin = 28;
   const cardX = margin;
   const cardY = margin;
   const cardW = PAGE_W - margin * 2;
   const cardH = PAGE_H - margin * 2;
-  const cardR = 56;
+  const cardR = 40;
 
   ctx.fillStyle = C.card;
   roundRect(ctx, cardX, cardY, cardW, cardH, cardR);
   ctx.fill();
   ctx.strokeStyle = C.cardLine;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 2;
   roundRect(ctx, cardX, cardY, cardW, cardH, cardR);
   ctx.stroke();
 
   const headerBottom = drawHeader(ctx, input, logo, cardX, cardY, cardW);
 
-  const tablePad = 48;
+  const tablePad = 24;
   const tableX = cardX + tablePad;
   const tableY = headerBottom;
   const tableW = cardW - tablePad * 2;
