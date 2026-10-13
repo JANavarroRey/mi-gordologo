@@ -58,7 +58,7 @@ const LUNCH_CATALOG: MenuDef[] = [
       item('Calabaza', '50g'),
       item('Tomate', '50g'),
       item('Cebolla', '¼ unidad'),
-      item('Pescado blanco/sepia/calamar (ó azul 100g)', '150g', 'A la plancha'),
+      item('Pollo/conejo sin piel (ó pescado blanco 150g)', '100g', 'Preferible carne; pescado solo si se desea variar'),
       item('Pan', '20g'),
       item('Aceite de oliva', '1.5 cdas')
     ]
@@ -200,14 +200,12 @@ const LUNCH_CATALOG: MenuDef[] = [
     ]
   },
   {
-    recipeName: 'Paella / Arroz Marinero',
-    cookidooQuery: 'Arroz Marinero',
+    recipeName: 'Paella / Arroz con Pollo',
+    cookidooQuery: 'Arroz con Pollo',
     items: [
       item('Arroz', '60g crudo / 8 cdas cocido'),
-      item('Emperador', '40g'),
-      item('Calamar', '40g'),
-      item('Gambas', '2 unidades'),
-      item('Almejas y mejillones', '3 uds c/u', 'O sustituir por 100g conejo/pollo'),
+      item('Pollo o conejo sin piel', '100g', 'Opción hospitalaria: o bien 40g emperador + 40g calamar + 2 gambas + 3 almejas + 3 mejillones'),
+      item('Pimiento, ajo, perejil, tomate', 'Al gusto', 'Sin sofreír'),
       item('Ensalada', 'Lechuga 150g, Tomate 150g'),
       item('Pan', '20g'),
       item('Aceite de oliva', '1.5 cdas')
@@ -874,27 +872,90 @@ const RECENA_ITEMS: MealItem[] = [
 // ============================================================================
 
 // Array of 8 weeks. Each week is 7 days. Each day is [lunchIndex, dinnerIndex]
-// Índices 0-based: comida_01=0 … comida_21=20 | cena_01=0 … cena_21=20
-// Semanas 1-3 = rotación OFICIAL Hospital Morales Meseguer
-// Semanas 1-3 = rotación OFICIAL Hospital. Semanas 4-8 mezclan hospital + nutricionista.
-// Índices comida 0-30, cena 0-30. Día 5 = Sábado (siempre con menú real).
+// Índices 0-based sobre LUNCH_CATALOG / DINNER_CATALOG.
+// Regla Morales Meseguer (RECOMENDACIONES): en comida 2–3 legumbres, 1 arroz, 1 pasta, 1 patatas, 1 verdura.
+// Proteína: máximo 2 días con pescado/conserva de pescado por semana; resto carne, huevo o legumbre.
 const ROTATION_TABLE: [number, number][][] = [
-  // Sem 1 hospital
-  [[0, 10], [1, 11], [2, 12], [3, 13], [4, 14], [5, 15], [6, 16]],
-  // Sem 2 hospital
-  [[7, 17], [8, 18], [9, 19], [2, 20], [5, 12], [7, 15], [8, 17]],
-  // Sem 3 hospital
-  [[0, 19], [4, 14], [6, 11], [3, 18], [9, 16], [1, 13], [5, 10]],
-  // Sem 4 — nutricionista (incl. sábado lentejas + espárragos)
-  [[21, 21], [22, 22], [23, 23], [24, 24], [25, 25], [26, 26], [27, 27]],
-  // Sem 5 — mezcla
-  [[28, 28], [29, 29], [21, 22], [10, 21], [12, 24], [30, 25], [14, 26]],
-  // Sem 6 — más variedad nutricionista (escalivada, gambas, zarangollo…)
-  [[22, 27], [24, 28], [26, 29], [28, 21], [30, 23], [23, 31], [25, 32]],
-  // Sem 7
-  [[27, 24], [29, 26], [21, 28], [23, 29], [25, 22], [22, 30], [24, 31]],
+  // Sem 1 — leg / arroz / verdura / pasta / leg / patata / murciana
+  [
+    [0, 9], // cocido + carne | sopa fideos + tortilla
+    [8, 5], // arroz champiñón pavo | alcachofas + pollo
+    [10, 2], // verduras + carne | crema calabacín + huevo
+    [3, 10], // pasta + atún | espinacas + conejo
+    [12, 13], // lentejas + tortilla | vichyssoise + pavo
+    [14, 6], // estofado ternera | revuelto champiñones
+    [6, 1], // ensalada murciana | arroz + pavo
+  ],
+  // Sem 2
+  [
+    [12, 1], // lentejas | arroz + pavo
+    [9, 10], // arroz a la cubana | espinacas + conejo
+    [10, 9], // verduras + carne | sopa + tortilla
+    [18, 5], // pasta al huevo | alcachofas + pollo
+    [0, 2], // cocido | crema + huevo
+    [14, 13], // estofado | vichyssoise + pavo
+    [4, 6], // alubias + caballa | revuelto
+  ],
+  // Sem 3
+  [
+    [15, 10], // potaje legumbres | conejo
+    [8, 2], // arroz pavo | crema + huevo
+    [3, 5], // pasta atún | alcachofas pollo
+    [10, 9], // verduras carne | sopa tortilla
+    [12, 1], // lentejas | arroz pavo
+    [6, 13], // murciana | vichyssoise pavo
+    [14, 6], // estofado | revuelto
+  ],
+  // Sem 4
+  [
+    [0, 2],
+    [9, 10],
+    [10, 13],
+    [12, 9],
+    [14, 5],
+    [18, 1],
+    [8, 6],
+  ],
+  // Sem 5 — un día de asado de pescado (menú 8); sin más pescado esa semana
+  [
+    [15, 9], // potaje (no caballa)
+    [8, 5],
+    [10, 2],
+    [18, 10], // pasta al huevo (no atún)
+    [0, 13],
+    [7, 6], // asado pescado (único de la semana)
+    [12, 1],
+  ],
+  // Sem 6
+  [
+    [12, 10],
+    [9, 6],
+    [10, 9],
+    [18, 5],
+    [0, 2],
+    [14, 13],
+    [15, 1],
+  ],
+  // Sem 7 — un día olla gitana (pescado o calamar; intercambiable por carne)
+  [
+    [0, 6],
+    [8, 9],
+    [10, 5],
+    [1, 2], // olla gitana
+    [3, 10],
+    [14, 1],
+    [12, 13],
+  ],
   // Sem 8
-  [[26, 32], [28, 25], [30, 27], [21, 29], [23, 21], [29, 24], [27, 26]],
+  [
+    [4, 2],
+    [9, 10],
+    [10, 9],
+    [12, 5],
+    [18, 13],
+    [0, 6],
+    [14, 1],
+  ],
 ];
 
 const STANDARD_DESSERT = 'Fruta fresca (Grupo A 300g / B 200g / C 160g / D 100g) ó 2 yogures desnatados sin azúcar';

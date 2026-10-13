@@ -20,13 +20,17 @@ function toLocalProfile(u: {
 }): UserProfile {
   const settings = u.settings || {};
   const rawIntake = settings.foodIntake as FoodIntake | undefined;
+  const existing = storageService.getProfileById(u.id);
+  const linkedFromSettings =
+    typeof settings.linkedMenuUserId === 'string' ? settings.linkedMenuUserId : null;
   return {
     id: u.id,
     name: u.name,
     age: u.age ?? 0,
     height: u.height ?? 0,
     targetCalories: u.targetCalories ?? 1500,
-    linkedMenuUserId: null,
+    linkedMenuUserId:
+      u.id === 'pepe' ? null : linkedFromSettings ?? existing?.linkedMenuUserId ?? null,
     createdAt: u.createdAt || new Date().toISOString(),
     role: u.role === 'superadmin' ? 'superadmin' : 'member',
     gender: u.gender === 'male' || u.gender === 'female' ? u.gender : null,
@@ -35,7 +39,7 @@ function toLocalProfile(u: {
         ? u.activityLevel
         : null,
     goal: u.goal === 'lose_weight' || u.goal === 'maintain' ? u.goal : null,
-    foodIntake: rawIntake?.completedAt ? rawIntake : storageService.getProfileById(u.id)?.foodIntake ?? null,
+    foodIntake: rawIntake?.completedAt ? rawIntake : existing?.foodIntake ?? null,
   };
 }
 
@@ -163,7 +167,34 @@ export const authSyncService = {
         freeDayEnabled: storageService.isFreeDayEnabled(uid),
         weighInDay: storageService.getWeighInDay(uid),
         foodIntake: p.foodIntake || null,
+        linkedMenuUserId: p.linkedMenuUserId,
       },
     });
+  },
+
+  /** Regenera menús 1.500 kcal en todos los perfiles y los sube al servidor. */
+  async resetAllMenusToHospitalSeed(): Promise<void> {
+    const ids = storageService.forceHospitalSeedOnAllProfiles();
+    if (!backendService.getUserToken()) return;
+    for (const id of ids) {
+      const weeks = storageService.getMenus(id);
+      await backendService.saveMenus(weeks, id, false);
+      const p = storageService.getProfileById(id);
+      if (p) {
+        await backendService.updateProfile({
+          userId: id,
+          targetCalories: p.targetCalories,
+          settings: {
+            servings: storageService.getServings(id),
+            freeDay: storageService.getFreeDay(id),
+            freeDayEnabled: storageService.isFreeDayEnabled(id),
+            weighInDay: storageService.getWeighInDay(id),
+            foodIntake: p.foodIntake || null,
+            linkedMenuUserId: p.linkedMenuUserId,
+          },
+        });
+      }
+    }
+    window.dispatchEvent(new Event('storage'));
   },
 };

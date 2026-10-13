@@ -42,13 +42,26 @@ export function AppLayout() {
     };
     window.addEventListener('storage', handleStorageChange);
     if (backendService.isLoggedIn()) {
-      void authSyncService.hydrateFromServer().then(() => {
+      void authSyncService.hydrateFromServer().then(async () => {
+        if (storageService.needsHospitalSeedReset()) {
+          await authSyncService.resetAllMenusToHospitalSeed();
+        } else {
+          // Asegura menús locales generados con la versión actual (getMenus aplica el seed).
+          for (const p of storageService.getProfiles()) {
+            storageService.getMenus(p.id);
+          }
+        }
         const next = storageService.getActiveProfile();
         setActiveUser(next);
         setShowHabits(storageService.needsHabitsQuiz(next.id) && skippedQuizFor.current !== next.id);
       });
-    } else if (storageService.needsHabitsQuiz()) {
-      setShowHabits(true);
+    } else {
+      if (storageService.needsHospitalSeedReset()) {
+        storageService.forceHospitalSeedOnAllProfiles();
+      }
+      if (storageService.needsHabitsQuiz()) {
+        setShowHabits(true);
+      }
     }
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);

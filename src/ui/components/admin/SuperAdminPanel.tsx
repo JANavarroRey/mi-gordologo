@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, Sparkles, KeyRound, Eye, EyeOff } from 'lucide-react';
+import { Shield, Sparkles, KeyRound, Eye, EyeOff, Link2 } from 'lucide-react';
 import { backendService } from '@/domain/services/backendService';
 import type { RemoteUser } from '@/domain/services/backendService';
+import { storageService } from '@/domain/services/storageService';
+import { authSyncService } from '@/domain/services/authSyncService';
 
 export const SuperAdminPanel: React.FC = () => {
   const [status, setStatus] = useState<{ backend: boolean; hasGemini: boolean } | null>(null);
@@ -9,8 +11,11 @@ export const SuperAdminPanel: React.FC = () => {
   const [users, setUsers] = useState<RemoteUser[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [visible, setVisible] = useState<Record<string, boolean>>({});
+  const [linkUserId, setLinkUserId] = useState('');
+  const [linkTargetId, setLinkTargetId] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const localProfiles = storageService.getProfiles();
 
   const refresh = async () => {
     if (!backendService.isConfigured()) {
@@ -62,6 +67,32 @@ export const SuperAdminPanel: React.FC = () => {
       await refresh();
     } else {
       setMsg(res.error || 'No se pudo cambiar la contraseña.');
+    }
+    setBusy(false);
+  };
+
+  const onLinkMenus = () => {
+    if (!linkUserId) {
+      setMsg('Elige qué perfil compartirá el menú de otro.');
+      return;
+    }
+    storageService.setLinkedMenuUser(linkUserId, linkTargetId || null);
+    setMsg(
+      linkTargetId
+        ? `${storageService.getProfileById(linkUserId)?.name} usará el mismo menú que ${storageService.getProfileById(linkTargetId)?.name}.`
+        : `${storageService.getProfileById(linkUserId)?.name} vuelve a tener menú propio.`
+    );
+    window.dispatchEvent(new Event('storage'));
+  };
+
+  const onResetMenus = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await authSyncService.resetAllMenusToHospitalSeed();
+      setMsg('Todos los perfiles vuelven al menú hospitalario de 1.500 kcal (8 semanas).');
+    } catch {
+      setMsg('No se pudieron resetear los menús.');
     }
     setBusy(false);
   };
@@ -182,6 +213,64 @@ export const SuperAdminPanel: React.FC = () => {
           </ul>
         </div>
       )}
+
+      <div className="space-y-2 pt-2 border-t border-neutral-100">
+        <label className="flex items-center gap-1.5 text-[11px] font-bold text-neutral-700">
+          <Link2 className="w-3.5 h-3.5" />
+          Vincular menús entre perfiles
+        </label>
+        <p className="text-[10px] text-neutral-500 leading-relaxed">
+          Útil si dos personas cocinan lo mismo. El perfil vinculado ve el menú del otro (comidas y cenas incluidas).
+        </p>
+        <select
+          value={linkUserId}
+          onChange={(e) => setLinkUserId(e.target.value)}
+          className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+        >
+          <option value="">Quién comparte menú…</option>
+          {localProfiles
+            .filter((p) => p.id !== 'pepe')
+            .map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+                {p.linkedMenuUserId
+                  ? ` (ahora: ${storageService.getProfileById(p.linkedMenuUserId)?.name || p.linkedMenuUserId})`
+                  : ' (menú propio)'}
+              </option>
+            ))}
+        </select>
+        <select
+          value={linkTargetId}
+          onChange={(e) => setLinkTargetId(e.target.value)}
+          className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+        >
+          <option value="">Menú propio (sin vínculo)</option>
+          {localProfiles
+            .filter((p) => p.id !== linkUserId)
+            .map((p) => (
+              <option key={p.id} value={p.id}>
+                Usar el de {p.name}
+              </option>
+            ))}
+        </select>
+        <button
+          type="button"
+          disabled={busy || !linkUserId}
+          onClick={onLinkMenus}
+          className="w-full py-2.5 rounded-xl border border-emerald-200 text-emerald-900 text-xs font-bold disabled:opacity-50"
+        >
+          Guardar vínculo
+        </button>
+      </div>
+
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void onResetMenus()}
+        className="w-full py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 text-xs font-bold disabled:opacity-50"
+      >
+        Restaurar menú hospitalario 1.500 kcal en todos
+      </button>
 
       {msg && <p className="text-[11px] text-neutral-700 leading-relaxed">{msg}</p>}
     </div>

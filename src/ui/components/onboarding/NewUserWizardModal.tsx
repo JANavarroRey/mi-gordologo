@@ -57,7 +57,8 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
       activityLevel,
       goal,
     });
-    const weeks = scaleWeekMenus(getHospitalMenuSeed(), targetCalories);
+    // Todos parten del mismo ciclo hospitalario 1.500 kcal; la encuesta posterior lo personaliza.
+    const weeks = scaleWeekMenus(getHospitalMenuSeed(), 1500);
     const measurements = storageService.getMeasurements(created.id);
 
     const res = await backendService.createUser({
