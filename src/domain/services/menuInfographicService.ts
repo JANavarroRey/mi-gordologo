@@ -1,5 +1,5 @@
 import type { Meal, WeekMenu } from '../models/types';
-import { LOGO_MARK_DATA_URL } from './logoMarkDataUrl';
+import { LOGO_JPG_DATA_URL } from './logoJpgDataUrl';
 
 type InfographicInput = {
   week: WeekMenu;
@@ -8,20 +8,21 @@ type InfographicInput = {
   kcal?: number;
 };
 
-/** WhatsApp reescala cualquier lado > 1600 px y deja el texto ilegible. */
+/** WhatsApp reescala cualquier lado > 1600 px. */
 const PAGE_W = 1600;
 const PAGE_H = 1600;
+/** Radio exterior de la imagen completa (como la plantilla). */
+const OUTER_R = 72;
 
 const DAY_LETTER = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 const DAY_NAME = ['LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO', 'DOMINGO'];
 
-/** Paleta tomada de la plantilla de referencia. */
 const C = {
-  page: '#e9f5ec',
-  blob: '#cfe9d6',
-  blobSoft: '#d9efdf',
+  page: '#eaf6ee',
+  blob: '#c8e6d0',
+  blobSoft: '#d7efdd',
   card: '#ffffff',
-  cardLine: '#c9ddd0',
+  cardLine: '#d0e0d6',
   ink: '#1b4332',
   brand: '#1b4332',
   leaf: '#52b788',
@@ -30,6 +31,7 @@ const C = {
   white: '#ffffff',
   divider: '#c5d5cb',
   free: '#b45309',
+  logoBg: '#16a34a',
 };
 
 const FONT = 'Nunito, "Segoe UI", system-ui, sans-serif';
@@ -85,20 +87,10 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-function drawBackdrop(ctx: CanvasRenderingContext2D) {
-  ctx.fillStyle = C.page;
-  ctx.fillRect(0, 0, PAGE_W, PAGE_H);
-
-  ctx.fillStyle = C.blob;
-  roundRect(ctx, -120, -140, 520, 420, 180);
-  ctx.fill();
-  roundRect(ctx, PAGE_W - 420, -80, 480, 320, 160);
-  ctx.fill();
-  roundRect(ctx, PAGE_W - 460, PAGE_H - 340, 520, 420, 180);
-  ctx.fill();
-
-  ctx.fillStyle = C.blobSoft;
-  roundRect(ctx, -60, PAGE_H - 220, 280, 260, 120);
+function drawOrganicBlob(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, color: string) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -106,19 +98,18 @@ function drawLeafMarks(ctx: CanvasRenderingContext2D, x: number, y: number) {
   ctx.save();
   ctx.fillStyle = C.leaf;
   [
-    { dx: 0, dy: -8, rot: -0.7, s: 1 },
-    { dx: 16, dy: 2, rot: -0.2, s: 0.92 },
-    { dx: 30, dy: 12, rot: 0.4, s: 0.95 },
+    { dx: 2, dy: -10, rot: -0.75, s: 1.05 },
+    { dx: 18, dy: 0, rot: -0.2, s: 0.95 },
+    { dx: 32, dy: 12, rot: 0.45, s: 1 },
   ].forEach((m) => {
     ctx.save();
     ctx.translate(x + m.dx, y + m.dy);
     ctx.rotate(m.rot);
     ctx.scale(m.s, m.s);
-    // Teardrop / sparkle like the reference
     ctx.beginPath();
-    ctx.moveTo(0, -12);
-    ctx.quadraticCurveTo(7, -2, 0, 12);
-    ctx.quadraticCurveTo(-7, -2, 0, -12);
+    ctx.moveTo(0, -13);
+    ctx.bezierCurveTo(8, -4, 8, 6, 0, 14);
+    ctx.bezierCurveTo(-8, 6, -8, -4, 0, -13);
     ctx.fill();
     ctx.restore();
   });
@@ -201,6 +192,38 @@ function drawIconMoon(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
   ctx.restore();
 }
 
+/** Dibuja public/logo.jpg con esquinas redondeadas (marca oficial). */
+function drawBrandLogo(
+  ctx: CanvasRenderingContext2D,
+  logo: HTMLImageElement,
+  x: number,
+  y: number,
+  size: number
+) {
+  const r = size * 0.2;
+  ctx.fillStyle = C.white;
+  roundRect(ctx, x, y, size, size, r);
+  ctx.fill();
+  ctx.strokeStyle = C.cardLine;
+  ctx.lineWidth = 2;
+  roundRect(ctx, x, y, size, size, r);
+  ctx.stroke();
+
+  ctx.save();
+  roundRect(ctx, x, y, size, size, r);
+  ctx.clip();
+
+  const srcW = logo.naturalWidth || logo.width;
+  const srcH = logo.naturalHeight || logo.height;
+  const pad = size * 0.04;
+  const box = size - pad * 2;
+  const scale = Math.min(box / srcW, box / srcH);
+  const dw = srcW * scale;
+  const dh = srcH * scale;
+  ctx.drawImage(logo, x + (size - dw) / 2, y + (size - dh) / 2, dw, dh);
+  ctx.restore();
+}
+
 function drawHeader(
   ctx: CanvasRenderingContext2D,
   input: InfographicInput,
@@ -211,51 +234,46 @@ function drawHeader(
 ): number {
   const { week, profileName, servings, kcal = 1500 } = input;
   const pad = 52;
-  const logoSize = 108;
+  const logoSize = 168;
   const logoX = cardX + pad;
-  const logoY = cardY + 40;
+  const logoY = cardY + 36;
 
-  // Logo mark (PNG embebido — nunca cuadrado verde vacío)
-  ctx.drawImage(logo, logoX, logoY, logoSize, logoSize);
+  drawBrandLogo(ctx, logo, logoX, logoY, logoSize);
 
-  ctx.fillStyle = C.ink;
-  ctx.font = `800 30px ${FONT}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillText('MiGordólogo', logoX + logoSize / 2, logoY + logoSize + 12);
-
-  const sepX = logoX + logoSize + 40;
+  const brandBottom = logoY + logoSize;
+  const sepX = logoX + logoSize + 36;
   ctx.strokeStyle = C.divider;
   ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.moveTo(sepX, logoY + 6);
-  ctx.lineTo(sepX, logoY + logoSize + 34);
+  ctx.moveTo(sepX, logoY + 10);
+  ctx.lineTo(sepX, brandBottom - 10);
   ctx.stroke();
 
-  const titleX = sepX + 40;
+  const titleX = sepX + 36;
+  const titleMidY = logoY + logoSize * 0.36;
   ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
+  ctx.textBaseline = 'middle';
   ctx.fillStyle = C.ink;
   ctx.font = `800 68px ${FONT}`;
-  ctx.fillText('Menú semanal', titleX, logoY + 58);
+  ctx.fillText('Menú semanal', titleX, titleMidY);
   const titleW = ctx.measureText('Menú semanal').width;
-  drawLeafMarks(ctx, titleX + titleW + 20, logoY + 38);
+  drawLeafMarks(ctx, titleX + titleW + 20, titleMidY - 22);
 
   const pillText = `SEMANA ${week.weekNumber}  ·  ${profileName.toUpperCase()}  ·  ${
     servings === 1 ? '1 RACIÓN' : '2 RACIONES'
   }  ·  ${Number(kcal).toLocaleString('es-ES')} KCAL`;
   ctx.font = `800 26px ${FONT}`;
-  const pillW = Math.min(ctx.measureText(pillText).width + 52, cardX + cardW - pad - titleX);
-  const pillH = 52;
-  const pillY = logoY + 78;
+  const pillW = Math.min(ctx.measureText(pillText).width + 56, cardX + cardW - pad - titleX);
+  const pillH = 54;
+  const pillY = titleMidY + 38;
   ctx.fillStyle = C.yellow;
-  roundRect(ctx, titleX, pillY, pillW, pillH, 26);
+  roundRect(ctx, titleX, pillY, pillW, pillH, pillH / 2);
   ctx.fill();
   ctx.fillStyle = C.ink;
   ctx.textBaseline = 'middle';
-  ctx.fillText(pillText, titleX + 26, pillY + pillH / 2, pillW - 44);
+  ctx.fillText(pillText, titleX + 28, pillY + pillH / 2, pillW - 48);
 
-  return Math.max(logoY + logoSize + 52, pillY + pillH + 28);
+  return Math.max(brandBottom + 28, pillY + pillH + 28);
 }
 
 function drawTable(
@@ -266,12 +284,12 @@ function drawTable(
   w: number,
   h: number
 ) {
-  const dayW = 158;
-  const headerH = 76;
+  const dayW = 160;
+  const headerH = 78;
   const bodyH = h - headerH;
   const rowH = bodyH / 7;
   const mealW = (w - dayW) / 3;
-  const r = 30;
+  const r = 36;
 
   ctx.save();
   roundRect(ctx, x, y, w, h, r);
@@ -312,9 +330,9 @@ function drawTable(
 
     const letter = DAY_LETTER[day.dayOfWeek] ?? DAY_LETTER[i];
     const name = DAY_NAME[day.dayOfWeek] ?? DAY_NAME[i];
-    const circleR = 30;
+    const circleR = 32;
     const cx = x + dayW / 2;
-    const cy = rowY + rowH / 2 - 12;
+    const cy = rowY + rowH / 2 - 14;
 
     ctx.fillStyle = C.brand;
     ctx.beginPath();
@@ -327,7 +345,7 @@ function drawTable(
     ctx.fillText(letter, cx, cy + 1);
 
     ctx.fillStyle = C.ink;
-    ctx.font = `800 17px ${FONT}`;
+    ctx.font = `800 18px ${FONT}`;
     ctx.fillText(name, cx, cy + circleR + 18);
 
     const meals = [
@@ -371,15 +389,14 @@ function drawTable(
   ctx.stroke();
 }
 
-function canvasToJpeg(canvas: HTMLCanvasElement): Promise<Blob> {
+function canvasToPng(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
         if (blob) resolve(blob);
         else reject(new Error('No se pudo generar la imagen'));
       },
-      'image/jpeg',
-      0.95
+      'image/png'
     );
   });
 }
@@ -417,10 +434,10 @@ function sampleWeek(): WeekMenu {
 }
 
 /**
- * JPEG 1600×1600 idéntico a la plantilla de menú semanal de referencia.
+ * PNG 1600×1600 con esquinas redondeadas — plantilla de menú semanal de referencia.
  */
 export async function buildWeekMenuInfographicPages(input: InfographicInput): Promise<Blob[]> {
-  const logo = await loadImage(LOGO_MARK_DATA_URL);
+  const logo = await loadImage(LOGO_JPG_DATA_URL);
 
   const canvas = document.createElement('canvas');
   canvas.width = PAGE_W;
@@ -430,26 +447,38 @@ export async function buildWeekMenuInfographicPages(input: InfographicInput): Pr
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  drawBackdrop(ctx);
+  // Esquinas exteriores transparentes (como la original)
+  ctx.clearRect(0, 0, PAGE_W, PAGE_H);
+  ctx.save();
+  roundRect(ctx, 0, 0, PAGE_W, PAGE_H, OUTER_R);
+  ctx.clip();
 
-  const margin = 56;
+  // Fondo menta + blobs orgánicos
+  ctx.fillStyle = C.page;
+  ctx.fillRect(0, 0, PAGE_W, PAGE_H);
+  drawOrganicBlob(ctx, 80, 60, 340, 280, C.blob);
+  drawOrganicBlob(ctx, PAGE_W - 60, 40, 300, 240, C.blobSoft);
+  drawOrganicBlob(ctx, PAGE_W - 40, PAGE_H - 80, 380, 300, C.blob);
+  drawOrganicBlob(ctx, 40, PAGE_H - 40, 220, 180, C.blobSoft);
+
+  const margin = 48;
   const cardX = margin;
   const cardY = margin;
   const cardW = PAGE_W - margin * 2;
   const cardH = PAGE_H - margin * 2;
-  const cardR = 44;
+  const cardR = 56;
 
   ctx.fillStyle = C.card;
   roundRect(ctx, cardX, cardY, cardW, cardH, cardR);
   ctx.fill();
   ctx.strokeStyle = C.cardLine;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.5;
   roundRect(ctx, cardX, cardY, cardW, cardH, cardR);
   ctx.stroke();
 
   const headerBottom = drawHeader(ctx, input, logo, cardX, cardY, cardW);
 
-  const tablePad = 44;
+  const tablePad = 48;
   const tableX = cardX + tablePad;
   const tableY = headerBottom;
   const tableW = cardW - tablePad * 2;
@@ -457,7 +486,9 @@ export async function buildWeekMenuInfographicPages(input: InfographicInput): Pr
 
   drawTable(ctx, input.week, tableX, tableY, tableW, tableH);
 
-  return [await canvasToJpeg(canvas)];
+  ctx.restore();
+
+  return [await canvasToPng(canvas)];
 }
 
 /** Solo para previsualización / QA local. */
@@ -476,8 +507,8 @@ export async function shareWeekMenuInfographic(input: InfographicInput): Promise
   const blobs = await buildWeekMenuInfographicPages(input);
   const files = blobs.map(
     (blob, i) =>
-      new File([blob], `menu-semana-${input.week.weekNumber}${blobs.length > 1 ? `-${i + 1}` : ''}.jpg`, {
-        type: 'image/jpeg',
+      new File([blob], `menu-semana-${input.week.weekNumber}${blobs.length > 1 ? `-${i + 1}` : ''}.png`, {
+        type: 'image/png',
       })
   );
 

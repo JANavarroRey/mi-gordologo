@@ -16,7 +16,9 @@ dist-ssr
 !.env.example
 supabase/.temp/
 tmp-menu-preview.jpg
+tmp-menu-preview.png
 tmp-*.jpg
+tmp-*.png
 
 # Editor directories and files
 .vscode/*

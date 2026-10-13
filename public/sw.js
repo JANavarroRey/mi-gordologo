@@ -1,10 +1,11 @@
 /* Mi Gordólogo — Service Worker (cache estático + offline shell) */
-const CACHE_NAME = 'migordologo-v30';
+const CACHE_NAME = 'migordologo-v31';
 const PRECACHE = [
   './',
   './index.html',
   './manifest.json',
   './logo.svg',
+  './logo.jpg',
   './logo-mark.png',
   './icon-192.svg',
   './icon-512.svg',
