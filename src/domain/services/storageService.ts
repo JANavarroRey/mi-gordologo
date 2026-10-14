@@ -220,6 +220,27 @@ export const storageService = {
     scheduleServerPush();
   },
 
+  /** IMC (kg/m²). null si falta estatura válida. */
+  calcBmi(weightKg: number, heightCm?: number | null): number | null {
+    const h = heightCm ?? this.getActiveProfile().height;
+    if (!h || h < 80 || h > 250 || !weightKg || weightKg <= 0) return null;
+    const m = h / 100;
+    return parseFloat((weightKg / (m * m)).toFixed(1));
+  },
+
+  /** Recalcula el IMC de todos los pesajes al cambiar la estatura del perfil. */
+  recalculateMeasurementBmis(userId?: string): void {
+    const id = userId || this.getActiveUserId();
+    const height = this.getProfileById(id)?.height ?? 0;
+    const list = this.getMeasurements(id).map((m) => ({
+      ...m,
+      bmi: this.calcBmi(m.weight, height),
+    }));
+    this.replaceMeasurements(list, id);
+    scheduleServerPush();
+    window.dispatchEvent(new Event('storage'));
+  },
+
   setLinkedMenuUser(userId: string, targetUserId: string | null): void {
     const profiles = this.getProfiles().map((p) => {
       if (p.id === userId) {

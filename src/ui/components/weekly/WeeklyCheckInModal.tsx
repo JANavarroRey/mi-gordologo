@@ -35,8 +35,10 @@ export const WeeklyCheckInModal: React.FC<WeeklyCheckInModalProps> = ({
     : null;
 
   const currentWeight = latestMeasurement ? latestMeasurement.weight : null;
-  const heightM = user.height / 100;
-  const currentBmi = currentWeight ? parseFloat((currentWeight / (heightM * heightM)).toFixed(1)) : null;
+  const currentBmi =
+    currentWeight && user.height >= 80
+      ? parseFloat((currentWeight / ((user.height / 100) * (user.height / 100))).toFixed(1))
+      : null;
 
   // Generación inteligente del dictamen
   const generateDictamen = () => {
@@ -51,7 +53,7 @@ export const WeeklyCheckInModal: React.FC<WeeklyCheckInModalProps> = ({
     if (isWeightDown) {
       const lostAbs = Math.abs(weightChange!);
       headline = `🎉 ¡Olé ese progreso! Has bajado ${lostAbs} kg`;
-      body = `El esfuerzo con las 1.500 kcal y el plan del Morales Meseguer da sus frutos. Has pasado a ${currentWeight} kg (IMC ${currentBmi}). Tu organismo está quemando reservas de grasa de forma controlada y segura.`;
+      body = `El esfuerzo con las 1.500 kcal y el plan del Morales Meseguer da sus frutos. Has pasado a ${currentWeight} kg${currentBmi != null ? ` (IMC ${currentBmi})` : ''}. Tu organismo está quemando reservas de grasa de forma controlada y segura.`;
     } else if (isWeightUp) {
       headline = `⚖️ Pequeña subida puntual (+${weightChange} kg) — ¡Sin culpa ni agobio!`;
       body = `En una dieta médica, el peso corporal fluctúa por retención de líquidos, tránsito digestivo o hidratación celular. Pesas ${currentWeight} kg. Lo importante es mantener la constancia en el menú de las 8 semanas.`;

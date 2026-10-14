@@ -62,6 +62,10 @@ export const TrackingPage: React.FC = () => {
   const activeUser = storageService.getActiveProfile();
   const weighInDay = storageService.getWeighInDay();
   const weighDayLabel = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][weighInDay];
+  /** Plural correcto en español (evita «juevess»). */
+  const weighDayPlural =
+    weighDayLabel === 'sábado' ? 'sábados' : weighDayLabel === 'domingo' ? 'domingos' : weighDayLabel;
+  const hasValidHeight = Boolean(activeUser.height && activeUser.height >= 80);
 
   const loadData = () => {
     const list = storageService.getMeasurements();
@@ -77,18 +81,19 @@ export const TrackingPage: React.FC = () => {
     const weightNum = parseFloat(formWeight);
     if (isNaN(weightNum) || weightNum <= 0) return;
 
-    const heightM = activeUser.height / 100;
-    const bmiCalc = parseFloat((weightNum / (heightM * heightM)).toFixed(1));
+    const bmiCalc = storageService.calcBmi(weightNum, activeUser.height);
 
     const fatNum = formFatPercent ? parseFloat(formFatPercent) : null;
     const muscleNum = formMuscle ? parseFloat(formMuscle) : null;
     const waterNum = formWater ? parseFloat(formWater) : null;
     const visceralNum = formVisceralFat ? parseFloat(formVisceralFat) : null;
     const boneNum = formBoneMinerals ? parseFloat(formBoneMinerals) : null;
-    const metAgeNum = formMetabolicAge ? parseInt(formMetabolicAge, 10) : activeUser.age;
+    const metAgeNum = formMetabolicAge ? parseInt(formMetabolicAge, 10) : activeUser.age || null;
     const basalNum = formBasalMetabolism
       ? parseInt(formBasalMetabolism, 10)
-      : Math.round(10 * weightNum + 6.25 * activeUser.height - 5 * activeUser.age);
+      : hasValidHeight && activeUser.age > 0
+        ? Math.round(10 * weightNum + 6.25 * activeUser.height - 5 * activeUser.age)
+        : null;
 
     storageService.addMeasurement({
       userId: activeUser.id,
@@ -356,8 +361,24 @@ export const TrackingPage: React.FC = () => {
       {/* Tarjeta de Salud: IMC (debajo de meter peso) */}
       {latest && latest.weight && (
         (() => {
+          const bmi = storageService.calcBmi(latest.weight, activeUser.height);
+          if (!hasValidHeight || bmi == null) {
+            return (
+              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 shadow-xs space-y-2">
+                <div className="flex items-center space-x-2">
+                  <HeartPulse className="w-4 h-4 text-amber-700" />
+                  <h3 className="font-bold text-xs text-amber-950 uppercase tracking-wider">
+                    Índice de Masa Corporal (IMC)
+                  </h3>
+                </div>
+                <p className="text-xs text-amber-900 leading-relaxed">
+                  Falta la estatura de este perfil para calcular el IMC. Ve a{' '}
+                  <strong>Mi Perfil → Datos corporales</strong> y guarda tu altura (solo allí se puede cambiar).
+                </p>
+              </div>
+            );
+          }
           const heightM = activeUser.height / 100;
-          const bmi = latest.bmi || parseFloat((latest.weight / (heightM * heightM)).toFixed(1));
           const category = getBmiCategory(bmi);
           const targetWeightNormo = Math.round(24.9 * heightM * heightM);
           const diffToNormo = Math.round(latest.weight - targetWeightNormo);
@@ -556,7 +577,7 @@ export const TrackingPage: React.FC = () => {
               <div className="flex items-start space-x-2 pt-1 text-emerald-950 bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-200/60">
                 <AlertCircle className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Pauta del protocolo:</strong> Pésate siempre los <strong>{weighDayLabel}s por la mañana en ayunas</strong>, tras orinar y con la misma ropa ligera, para que las cifras sean 100% comparables.
+                  <strong>Pauta del protocolo:</strong> Pésate siempre los <strong>{weighDayPlural} por la mañana en ayunas</strong>, tras orinar y con la misma ropa ligera, para que las cifras sean 100% comparables.
                 </span>
               </div>
             </>
@@ -589,7 +610,10 @@ export const TrackingPage: React.FC = () => {
                   )}
                 </div>
                 <div className="flex items-center space-x-3 mt-1 text-[11px] text-neutral-500">
-                  <span>IMC: <strong>{m.bmi ?? '--'}</strong></span>
+                  <span>
+                    IMC:{' '}
+                    <strong>{storageService.calcBmi(m.weight, activeUser.height) ?? m.bmi ?? '--'}</strong>
+                  </span>
                   <span>Grasa: <strong>{m.fatPercent ? `${m.fatPercent}%` : '--'}</strong></span>
                   <span>Músculo: <strong>{m.skeletalMuscle ? `${m.skeletalMuscle}kg` : '--'}</strong></span>
                 </div>

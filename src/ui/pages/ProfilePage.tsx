@@ -37,17 +37,32 @@ export const ProfilePage: React.FC = () => {
   const [showTutorialModal, setShowTutorialModal] = useState(false);
   const [ownPassword, setOwnPassword] = useState('');
   const [pwdMsg, setPwdMsg] = useState<string | null>(null);
+  const [bodyHeight, setBodyHeight] = useState(() =>
+    storageService.getActiveProfile().height > 0 ? String(storageService.getActiveProfile().height) : ''
+  );
+  const [bodyAge, setBodyAge] = useState(() =>
+    storageService.getActiveProfile().age > 0 ? String(storageService.getActiveProfile().age) : ''
+  );
+  const [bodyGender, setBodyGender] = useState<'male' | 'female' | ''>(() => {
+    const g = storageService.getActiveProfile().gender;
+    return g === 'male' || g === 'female' ? g : '';
+  });
+  const [bodyMsg, setBodyMsg] = useState<string | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<string>(() => {
     return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
   });
 
   useEffect(() => {
     const syncFromStorage = () => {
-      setActiveUser(storageService.getActiveProfile());
+      const profile = storageService.getActiveProfile();
+      setActiveUser(profile);
       setServings(storageService.getServings());
       setFreeDay(storageService.getFreeDay());
       setFreeDayEnabled(storageService.isFreeDayEnabled());
       setWeighInDay(storageService.getWeighInDay());
+      setBodyHeight(profile.height > 0 ? String(profile.height) : '');
+      setBodyAge(profile.age > 0 ? String(profile.age) : '');
+      setBodyGender(profile.gender === 'male' || profile.gender === 'female' ? profile.gender : '');
       if (typeof window !== 'undefined' && 'Notification' in window) {
         setNotificationPermission(Notification.permission);
       }
@@ -56,6 +71,32 @@ export const ProfilePage: React.FC = () => {
     window.addEventListener('storage', syncFromStorage);
     return () => window.removeEventListener('storage', syncFromStorage);
   }, []);
+
+  const handleSaveBodyData = (e: React.FormEvent) => {
+    e.preventDefault();
+    setBodyMsg(null);
+    const height = parseInt(bodyHeight, 10);
+    const age = parseInt(bodyAge, 10);
+    if (!height || height < 80 || height > 250) {
+      setBodyMsg('Indica una altura válida en cm (entre 80 y 250).');
+      return;
+    }
+    if (bodyAge && (!age || age < 1 || age > 120)) {
+      setBodyMsg('La edad debe estar entre 1 y 120 años (o déjala vacía).');
+      return;
+    }
+    const next: UserProfile = {
+      ...activeUser,
+      height,
+      age: age > 0 ? age : activeUser.age,
+      gender: bodyGender === 'male' || bodyGender === 'female' ? bodyGender : null,
+    };
+    storageService.updateProfile(next);
+    storageService.recalculateMeasurementBmis(next.id);
+    setActiveUser(next);
+    setBodyMsg('Datos guardados. El IMC de Progreso se recalcula con esta estatura.');
+    window.dispatchEvent(new Event('storage'));
+  };
 
   const handleToggleServings = (val: number) => {
     setServings(val);
@@ -318,6 +359,73 @@ export const ProfilePage: React.FC = () => {
           Cerrar sesión
         </button>
         {pwdMsg && <p className="text-[11px] text-neutral-600">{pwdMsg}</p>}
+      </div>
+
+      {/* Datos corporales (altura para IMC; solo editable aquí) */}
+      <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-3">
+        <div className="flex items-center space-x-2">
+          <Scale className="w-4 h-4 text-emerald-700" />
+          <h3 className="font-bold text-sm text-neutral-900">Datos corporales de {activeUser.name}</h3>
+        </div>
+        <p className="text-[11px] text-neutral-500 leading-relaxed">
+          La <strong>altura</strong> hace falta para calcular el IMC en Progreso. Se guarda por perfil y
+          solo se cambia desde aquí (no desde el pesaje).
+        </p>
+        <form onSubmit={handleSaveBodyData} className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block space-y-1">
+              <span className="text-[11px] font-bold text-neutral-700">Altura (cm) *</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={80}
+                max={250}
+                value={bodyHeight}
+                onChange={(e) => setBodyHeight(e.target.value)}
+                placeholder="ej. 170"
+                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+                required
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[11px] font-bold text-neutral-700">Edad (años)</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={120}
+                value={bodyAge}
+                onChange={(e) => setBodyAge(e.target.value)}
+                placeholder="opcional"
+                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+              />
+            </label>
+          </div>
+          <label className="block space-y-1">
+            <span className="text-[11px] font-bold text-neutral-700">Sexo</span>
+            <select
+              value={bodyGender}
+              onChange={(e) => setBodyGender(e.target.value as 'male' | 'female' | '')}
+              className="w-full text-xs p-2.5 rounded-xl border border-neutral-200 bg-white"
+            >
+              <option value="">Sin indicar</option>
+              <option value="female">Mujer</option>
+              <option value="male">Hombre</option>
+            </select>
+          </label>
+          <button
+            type="submit"
+            className="w-full py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800"
+          >
+            Guardar datos corporales
+          </button>
+          {bodyMsg && <p className="text-[11px] text-neutral-600">{bodyMsg}</p>}
+          {(!activeUser.height || activeUser.height < 80) && (
+            <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              Este perfil aún no tiene altura: el IMC en Progreso aparecerá como incompleto hasta que la guardes.
+            </p>
+          )}
+        </form>
       </div>
 
       {/* Raciones y Día Libre */}
