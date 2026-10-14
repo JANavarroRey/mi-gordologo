@@ -32,6 +32,51 @@ const BMI_ZONES = [
   { key: 'obesidad', label: 'Obesidad', y1: 30, y2: 60, fill: '#ef4444', opacity: 0.16 },
 ] as const;
 
+type ChartPeriod = 'all' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
+
+const PERIOD_OPTIONS: { id: ChartPeriod; label: string }[] = [
+  { id: 'all', label: 'Todo' },
+  { id: 'week', label: 'Semana' },
+  { id: 'month', label: 'Mes' },
+  { id: 'quarter', label: 'Trimestre' },
+  { id: 'year', label: 'Año' },
+  { id: 'custom', label: 'Personalizado' },
+];
+
+const toLocalDateStr = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const getPeriodBounds = (
+  period: ChartPeriod,
+  customFrom: string,
+  customTo: string
+): { from: string | null; to: string | null } => {
+  if (period === 'all') return { from: null, to: null };
+  if (period === 'custom') {
+    return {
+      from: customFrom || null,
+      to: customTo || null,
+    };
+  }
+
+  const end = new Date();
+  end.setHours(12, 0, 0, 0);
+  const start = new Date(end);
+  if (period === 'week') start.setDate(start.getDate() - 7);
+  else if (period === 'month') start.setMonth(start.getMonth() - 1);
+  else if (period === 'quarter') start.setMonth(start.getMonth() - 3);
+  else if (period === 'year') start.setFullYear(start.getFullYear() - 1);
+
+  return { from: toLocalDateStr(start), to: toLocalDateStr(end) };
+};
+
+const formatChartDate = (iso: string, spanYears: boolean) =>
+  spanYears ? iso.slice(2) : iso.slice(5);
+
 const getBmiCategory = (bmi: number) => {
   if (bmi < 18.5) {
     return {
@@ -67,6 +112,9 @@ export const TrackingPage: React.FC = () => {
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeUser, setActiveUser] = useState(() => storageService.getActiveProfile());
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState(() => toLocalDateStr(new Date()));
 
   const [formDate, setFormDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [formWeight, setFormWeight] = useState('');
@@ -167,17 +215,53 @@ export const TrackingPage: React.FC = () => {
       ? parseFloat((latest.fatPercent - initial.fatPercent).toFixed(1))
       : null;
 
+  const periodBounds = useMemo(
+    () => getPeriodBounds(chartPeriod, customFrom, customTo),
+    [chartPeriod, customFrom, customTo]
+  );
+
+  const filteredMeasurements = useMemo(() => {
+    const { from, to } = periodBounds;
+    return measurements.filter((m) => {
+      if (from && m.date < from) return false;
+      if (to && m.date > to) return false;
+      return true;
+    });
+  }, [measurements, periodBounds]);
+
+  const chartSpanYears = useMemo(() => {
+    if (filteredMeasurements.length < 2) return false;
+    const firstY = filteredMeasurements[0].date.slice(0, 4);
+    const lastY = filteredMeasurements[filteredMeasurements.length - 1].date.slice(0, 4);
+    return firstY !== lastY;
+  }, [filteredMeasurements]);
+
   const chartData = useMemo(
     () =>
-      measurements.map((m) => ({
-        date: m.date.slice(5),
+      filteredMeasurements.map((m) => ({
+        date: formatChartDate(m.date, chartSpanYears),
         peso: m.weight,
         imc: storageService.calcBmi(m.weight, activeUser.height),
         grasa: m.fatPercent,
         musculo: m.skeletalMuscle,
       })),
-    [measurements, activeUser.height]
+    [filteredMeasurements, activeUser.height, chartSpanYears]
   );
+
+  const periodFirst = filteredMeasurements[0];
+  const periodLast = filteredMeasurements[filteredMeasurements.length - 1];
+  const periodWeightDiff =
+    periodFirst && periodLast ? parseFloat((periodLast.weight - periodFirst.weight).toFixed(1)) : 0;
+  const periodFirstBmi = periodFirst
+    ? storageService.calcBmi(periodFirst.weight, activeUser.height)
+    : null;
+  const periodLastBmi = periodLast
+    ? storageService.calcBmi(periodLast.weight, activeUser.height)
+    : null;
+  const periodBmiDiff =
+    periodFirstBmi != null && periodLastBmi != null
+      ? parseFloat((periodLastBmi - periodFirstBmi).toFixed(1))
+      : null;
 
   const bmiYDomain = useMemo((): [number, number] => {
     const values = chartData.map((d) => d.imc).filter((v): v is number => typeof v === 'number');
@@ -189,6 +273,23 @@ export const TrackingPage: React.FC = () => {
 
   const hasComposition = chartData.some((d) => d.grasa != null || d.musculo != null);
   const hasBmiSeries = chartData.some((d) => d.imc != null);
+
+  const selectPeriod = (period: ChartPeriod) => {
+    setChartPeriod(period);
+    if (period === 'custom' && !customFrom && measurements.length > 0) {
+      setCustomFrom(measurements[0].date);
+      setCustomTo(toLocalDateStr(new Date()));
+    }
+  };
+
+  const periodHint = (() => {
+    if (chartPeriod === 'all') return 'Desde el primer pesaje hasta ahora';
+    const { from, to } = periodBounds;
+    if (!from && !to) return '';
+    if (from && to) return `${from} → ${to}`;
+    if (from) return `Desde ${from}`;
+    return `Hasta ${to}`;
+  })();
 
   return (
     <div className="space-y-4">
@@ -457,22 +558,79 @@ export const TrackingPage: React.FC = () => {
         })()
       )}
 
-      {/* 4. Evolución del peso */}
+      {/* 4. Filtro temporal de gráficas */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-neutral-200 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="font-bold text-sm text-neutral-800 flex items-center">
+            <Calendar className="w-4 h-4 mr-1.5 text-primary-600" />
+            Periodo de las gráficas
+          </h3>
+          <span className="text-[11px] text-neutral-500 shrink-0">
+            {filteredMeasurements.length} pesaje{filteredMeasurements.length === 1 ? '' : 's'}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {PERIOD_OPTIONS.map((opt) => {
+            const active = chartPeriod === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => selectPeriod(opt.id)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  active
+                    ? 'bg-primary-600 text-white border-primary-600'
+                    : 'bg-neutral-50 text-neutral-700 border-neutral-200 hover:border-primary-300'
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        {chartPeriod === 'custom' && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="min-w-0">
+              <label className="block text-[11px] font-semibold text-neutral-600 mb-1">Desde</label>
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo || undefined}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="w-full min-w-0 max-w-full box-border text-sm p-2.5 rounded-xl border border-neutral-200 focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div className="min-w-0">
+              <label className="block text-[11px] font-semibold text-neutral-600 mb-1">Hasta</label>
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom || undefined}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="w-full min-w-0 max-w-full box-border text-sm p-2.5 rounded-xl border border-neutral-200 focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+          </div>
+        )}
+        {periodHint && <p className="text-[11px] text-neutral-500">{periodHint}</p>}
+      </div>
+
+      {/* 5. Evolución del peso */}
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-neutral-200">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-sm text-neutral-800 flex items-center">
             <TrendingDown className="w-4 h-4 mr-1.5 text-primary-600" />
             Evolución del peso
           </h3>
-          {weightDiff < 0 ? (
+          {chartData.length === 0 ? null : periodWeightDiff < 0 ? (
             <span className="text-xs text-emerald-800 font-semibold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center space-x-1">
               <TrendingDown className="w-3 h-3 text-emerald-600" />
-              <span>−{Math.abs(weightDiff)} kg</span>
+              <span>−{Math.abs(periodWeightDiff)} kg</span>
             </span>
-          ) : weightDiff > 0 ? (
+          ) : periodWeightDiff > 0 ? (
             <span className="text-xs text-amber-800 font-semibold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md flex items-center space-x-1">
               <TrendingUp className="w-3 h-3 text-amber-600" />
-              <span>+{weightDiff} kg</span>
+              <span>+{periodWeightDiff} kg</span>
             </span>
           ) : (
             <span className="text-xs text-neutral-600 font-semibold bg-neutral-100 px-2 py-0.5 rounded-md">
@@ -482,7 +640,11 @@ export const TrackingPage: React.FC = () => {
         </div>
 
         {chartData.length === 0 ? (
-          <p className="text-xs text-neutral-500 py-8 text-center">Aún no hay pesajes para graficar.</p>
+          <p className="text-xs text-neutral-500 py-8 text-center">
+            {measurements.length === 0
+              ? 'Aún no hay pesajes para graficar.'
+              : 'No hay pesajes en el periodo seleccionado.'}
+          </p>
         ) : (
           <div className="h-44 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -520,22 +682,22 @@ export const TrackingPage: React.FC = () => {
         )}
       </div>
 
-      {/* 5. Evolución del IMC con zonas OMS */}
+      {/* 6. Evolución del IMC con zonas OMS */}
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-neutral-200">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-sm text-neutral-800 flex items-center">
             <HeartPulse className="w-4 h-4 mr-1.5 text-emerald-600" />
             Evolución del IMC
           </h3>
-          {bmiDiff != null && bmiDiff < 0 ? (
+          {periodBmiDiff != null && periodBmiDiff < 0 ? (
             <span className="text-xs text-emerald-800 font-semibold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center space-x-1">
               <TrendingDown className="w-3 h-3 text-emerald-600" />
-              <span>−{Math.abs(bmiDiff)}</span>
+              <span>−{Math.abs(periodBmiDiff)}</span>
             </span>
-          ) : bmiDiff != null && bmiDiff > 0 ? (
+          ) : periodBmiDiff != null && periodBmiDiff > 0 ? (
             <span className="text-xs text-amber-800 font-semibold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md flex items-center space-x-1">
               <TrendingUp className="w-3 h-3 text-amber-600" />
-              <span>+{bmiDiff}</span>
+              <span>+{periodBmiDiff}</span>
             </span>
           ) : hasBmiSeries ? (
             <span className="text-xs text-neutral-600 font-semibold bg-neutral-100 px-2 py-0.5 rounded-md">
@@ -548,8 +710,10 @@ export const TrackingPage: React.FC = () => {
           <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-3">
             Guarda la altura en <strong>Mi Perfil → Datos corporales</strong> para ver esta gráfica.
           </p>
-        ) : !hasBmiSeries ? (
+        ) : measurements.length === 0 ? (
           <p className="text-xs text-neutral-500 py-8 text-center">Registra pesajes para ver la evolución del IMC.</p>
+        ) : !hasBmiSeries ? (
+          <p className="text-xs text-neutral-500 py-8 text-center">No hay pesajes en el periodo seleccionado.</p>
         ) : (
           <>
             <div className="h-52 w-full">
@@ -612,7 +776,7 @@ export const TrackingPage: React.FC = () => {
         )}
       </div>
 
-      {/* 6. Composición corporal (si hay datos) */}
+      {/* 7. Composición corporal (si hay datos) */}
       {hasComposition && (
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-neutral-200">
           <h3 className="font-bold text-sm text-neutral-800 mb-3 flex items-center">
@@ -686,7 +850,7 @@ export const TrackingPage: React.FC = () => {
         </div>
       )}
 
-      {/* 7. Parte semanal */}
+      {/* 8. Parte semanal */}
       <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-sm space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
