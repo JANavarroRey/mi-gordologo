@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -7,18 +7,36 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  ReferenceArea,
 } from 'recharts';
-import { PlusCircle, TrendingDown, TrendingUp, Scale, Trash2, Calendar, AlertCircle, Sparkles, HeartPulse } from 'lucide-react';
+import {
+  PlusCircle,
+  TrendingDown,
+  TrendingUp,
+  Scale,
+  Trash2,
+  Calendar,
+  AlertCircle,
+  Sparkles,
+  HeartPulse,
+} from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
 import { WeeklyCheckInModal } from '@/ui/components/weekly/WeeklyCheckInModal';
 import type { BodyMeasurement } from '@/domain/models/types';
 
-// Clasificación de IMC según la OMS
+/** Bandas OMS para sombrear la gráfica de IMC. */
+const BMI_ZONES = [
+  { key: 'bajo', label: 'Bajo peso', y1: 10, y2: 18.5, fill: '#38bdf8', opacity: 0.18 },
+  { key: 'normal', label: 'Normal', y1: 18.5, y2: 25, fill: '#22c55e', opacity: 0.22 },
+  { key: 'sobre', label: 'Sobrepeso', y1: 25, y2: 30, fill: '#f59e0b', opacity: 0.2 },
+  { key: 'obesidad', label: 'Obesidad', y1: 30, y2: 60, fill: '#ef4444', opacity: 0.16 },
+] as const;
+
 const getBmiCategory = (bmi: number) => {
   if (bmi < 18.5) {
     return {
       label: 'Bajo peso',
-      color: 'text-amber-800 bg-amber-100 border-amber-300',
+      color: 'text-sky-800 bg-sky-100 border-sky-300',
       description: 'Por debajo del peso recomendado (18,5 - 24,9). Conviene consultar con tu especialista.',
     };
   }
@@ -48,6 +66,7 @@ export const TrackingPage: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [activeUser, setActiveUser] = useState(() => storageService.getActiveProfile());
 
   const [formDate, setFormDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [formWeight, setFormWeight] = useState('');
@@ -59,21 +78,22 @@ export const TrackingPage: React.FC = () => {
   const [formMetabolicAge, setFormMetabolicAge] = useState('');
   const [formBasalMetabolism, setFormBasalMetabolism] = useState('');
 
-  const activeUser = storageService.getActiveProfile();
-  const weighInDay = storageService.getWeighInDay();
+  const weighInDay = storageService.getWeighInDay(activeUser.id);
   const weighDayLabel = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][weighInDay];
-  /** Plural correcto en español (evita «juevess»). */
   const weighDayPlural =
     weighDayLabel === 'sábado' ? 'sábados' : weighDayLabel === 'domingo' ? 'domingos' : weighDayLabel;
   const hasValidHeight = Boolean(activeUser.height && activeUser.height >= 80);
 
   const loadData = () => {
-    const list = storageService.getMeasurements();
-    setMeasurements(list);
+    setActiveUser(storageService.getActiveProfile());
+    setMeasurements(storageService.getMeasurements());
   };
 
   useEffect(() => {
     loadData();
+    const onStorage = () => loadData();
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   const handleAddMeasurement = (e: React.FormEvent) => {
@@ -82,7 +102,6 @@ export const TrackingPage: React.FC = () => {
     if (isNaN(weightNum) || weightNum <= 0) return;
 
     const bmiCalc = storageService.calcBmi(weightNum, activeUser.height);
-
     const fatNum = formFatPercent ? parseFloat(formFatPercent) : null;
     const muscleNum = formMuscle ? parseFloat(formMuscle) : null;
     const waterNum = formWater ? parseFloat(formWater) : null;
@@ -136,34 +155,52 @@ export const TrackingPage: React.FC = () => {
     }
   };
 
-  // Cálculos de variación
   const latest = measurements[measurements.length - 1];
   const initial = measurements[0];
   const weightDiff = latest && initial ? parseFloat((latest.weight - initial.weight).toFixed(1)) : 0;
-  const fatDiff = latest && initial && latest.fatPercent && initial.fatPercent
-    ? parseFloat((latest.fatPercent - initial.fatPercent).toFixed(1))
-    : null;
+  const latestBmi = latest ? storageService.calcBmi(latest.weight, activeUser.height) : null;
+  const initialBmi = initial ? storageService.calcBmi(initial.weight, activeUser.height) : null;
+  const bmiDiff =
+    latestBmi != null && initialBmi != null ? parseFloat((latestBmi - initialBmi).toFixed(1)) : null;
+  const fatDiff =
+    latest && initial && latest.fatPercent && initial.fatPercent
+      ? parseFloat((latest.fatPercent - initial.fatPercent).toFixed(1))
+      : null;
 
-  // Datos formateados para Recharts
-  const chartData = measurements.map((m) => ({
-    date: m.date.slice(5), // '09-10'
-    peso: m.weight,
-    grasa: m.fatPercent,
-    musculo: m.skeletalMuscle,
-  }));
+  const chartData = useMemo(
+    () =>
+      measurements.map((m) => ({
+        date: m.date.slice(5),
+        peso: m.weight,
+        imc: storageService.calcBmi(m.weight, activeUser.height),
+        grasa: m.fatPercent,
+        musculo: m.skeletalMuscle,
+      })),
+    [measurements, activeUser.height]
+  );
+
+  const bmiYDomain = useMemo((): [number, number] => {
+    const values = chartData.map((d) => d.imc).filter((v): v is number => typeof v === 'number');
+    if (!values.length) return [16, 36];
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    return [Math.min(16, Math.floor(min - 1)), Math.max(36, Math.ceil(max + 1))];
+  }, [chartData]);
+
+  const hasComposition = chartData.some((d) => d.grasa != null || d.musculo != null);
+  const hasBmiSeries = chartData.some((d) => d.imc != null);
 
   return (
     <div className="space-y-4">
-      {/* Resumen Superior */}
+      {/* 1. Resumen */}
       <div className="bg-gradient-to-br from-primary-600 to-primary-700 text-white p-5 rounded-3xl shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-primary-100 uppercase tracking-wider">
-              Seguimiento Clínico
-            </p>
+            <p className="text-xs font-medium text-primary-100 uppercase tracking-wider">Seguimiento clínico</p>
             <h2 className="text-2xl font-bold font-display mt-0.5">{activeUser.name}</h2>
           </div>
           <button
+            type="button"
             onClick={() => setShowAddForm(!showAddForm)}
             className="flex items-center space-x-1.5 px-3.5 py-2 rounded-full bg-white text-primary-700 hover:bg-primary-50 font-bold text-xs shadow-sm transition-all"
           >
@@ -172,39 +209,46 @@ export const TrackingPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Métricas clave en cards transparentes */}
         {latest && (
           <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-primary-500/40 text-center">
             <div className="bg-white/10 rounded-2xl p-2.5 backdrop-blur-xs">
-              <span className="text-[11px] text-primary-100 block">Peso Actual</span>
+              <span className="text-[11px] text-primary-100 block">Peso</span>
               <span className="text-xl font-bold">{latest.weight} kg</span>
               {weightDiff !== 0 && (
-                <span className={`text-[10px] block font-semibold ${weightDiff < 0 ? 'text-emerald-200' : 'text-amber-200'}`}>
+                <span
+                  className={`text-[10px] block font-semibold ${weightDiff < 0 ? 'text-emerald-200' : 'text-amber-200'}`}
+                >
                   {weightDiff > 0 ? `+${weightDiff}` : weightDiff} kg
                 </span>
               )}
             </div>
-
             <div className="bg-white/10 rounded-2xl p-2.5 backdrop-blur-xs">
-              <span className="text-[11px] text-primary-100 block">Grasa Corporal</span>
-              <span className="text-xl font-bold">{latest.fatPercent ?? '--'}%</span>
-              {fatDiff !== null && (
-                <span className={`text-[10px] block font-semibold ${fatDiff < 0 ? 'text-emerald-200' : 'text-amber-200'}`}>
-                  {fatDiff > 0 ? `+${fatDiff}` : fatDiff}%
+              <span className="text-[11px] text-primary-100 block">IMC</span>
+              <span className="text-xl font-bold">{latestBmi ?? '--'}</span>
+              {bmiDiff != null && bmiDiff !== 0 && (
+                <span
+                  className={`text-[10px] block font-semibold ${bmiDiff < 0 ? 'text-emerald-200' : 'text-amber-200'}`}
+                >
+                  {bmiDiff > 0 ? `+${bmiDiff}` : bmiDiff}
                 </span>
               )}
             </div>
-
             <div className="bg-white/10 rounded-2xl p-2.5 backdrop-blur-xs">
-              <span className="text-[11px] text-primary-100 block">Músculo</span>
-              <span className="text-xl font-bold">{latest.skeletalMuscle ?? '--'} kg</span>
-              <span className="text-[10px] text-primary-200 block">Esquelético</span>
+              <span className="text-[11px] text-primary-100 block">Grasa</span>
+              <span className="text-xl font-bold">{latest.fatPercent ?? '--'}%</span>
+              {fatDiff !== null && (
+                <span
+                  className={`text-[10px] block font-semibold ${fatDiff < 0 ? 'text-emerald-200' : 'text-amber-200'}`}
+                >
+                  {fatDiff > 0 ? `+${fatDiff}` : fatDiff}%
+                </span>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* Formulario Añadir Registro (arriba, antes del IMC) */}
+      {/* 2. Formulario de pesaje */}
       {showAddForm && (
         <form
           onSubmit={handleAddMeasurement}
@@ -358,11 +402,10 @@ export const TrackingPage: React.FC = () => {
         </form>
       )}
 
-      {/* Tarjeta de Salud: IMC (debajo de meter peso) */}
+      {/* 3. Estado actual del IMC */}
       {latest && latest.weight && (
         (() => {
-          const bmi = storageService.calcBmi(latest.weight, activeUser.height);
-          if (!hasValidHeight || bmi == null) {
+          if (!hasValidHeight || latestBmi == null) {
             return (
               <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 shadow-xs space-y-2">
                 <div className="flex items-center space-x-2">
@@ -379,7 +422,7 @@ export const TrackingPage: React.FC = () => {
             );
           }
           const heightM = activeUser.height / 100;
-          const category = getBmiCategory(bmi);
+          const category = getBmiCategory(latestBmi);
           const targetWeightNormo = Math.round(24.9 * heightM * heightM);
           const diffToNormo = Math.round(latest.weight - targetWeightNormo);
 
@@ -396,19 +439,16 @@ export const TrackingPage: React.FC = () => {
                   {category.label}
                 </span>
               </div>
-
               <div className="flex items-baseline space-x-2">
-                <span className="text-3xl font-extrabold text-neutral-900 font-display">
-                  {bmi}
-                </span>
+                <span className="text-3xl font-extrabold text-neutral-900 font-display">{latestBmi}</span>
                 <span className="text-xs text-neutral-500 font-medium">kg/m²</span>
               </div>
-
               <p className="text-xs text-neutral-600 leading-relaxed">
                 {category.description}
                 {diffToNormo > 0 && (
                   <span className="block mt-1 font-medium text-emerald-800">
-                    💡 Referencia: Con tu estatura de {activeUser.height} cm, un peso de ~{targetWeightNormo} kg se situaría en rango normal (IMC 24,9).
+                    💡 Referencia: Con tu estatura de {activeUser.height} cm, un peso de ~{targetWeightNormo} kg se
+                    situaría en rango normal (IMC 24,9).
                   </span>
                 )}
               </p>
@@ -417,7 +457,7 @@ export const TrackingPage: React.FC = () => {
         })()
       )}
 
-      {/* Gráfico 1: solo peso (escala en kg) */}
+      {/* 4. Evolución del peso */}
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-neutral-200">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold text-sm text-neutral-800 flex items-center">
@@ -441,43 +481,139 @@ export const TrackingPage: React.FC = () => {
           )}
         </div>
 
-        <div className="h-44 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 12, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#94a3b8" />
-              <YAxis
-                domain={[(dataMin: number) => Math.floor(dataMin - 1), (dataMax: number) => Math.ceil(dataMax + 1)]}
-                tick={{ fontSize: 11 }}
-                stroke="#94a3b8"
-                unit=" kg"
-                width={48}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#ffffff',
-                  borderRadius: '12px',
-                  border: '1px solid #e2e8f0',
-                  fontSize: '12px',
-                }}
-                formatter={(value) => [`${value} kg`, 'Peso']}
-              />
-              <Line
-                type="monotone"
-                dataKey="peso"
-                name="Peso (kg)"
-                stroke="#16a34a"
-                strokeWidth={3}
-                dot={{ r: 5, fill: '#16a34a', stroke: '#ffffff', strokeWidth: 2 }}
-                activeDot={{ r: 7 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {chartData.length === 0 ? (
+          <p className="text-xs text-neutral-500 py-8 text-center">Aún no hay pesajes para graficar.</p>
+        ) : (
+          <div className="h-44 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 5, right: 12, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                <YAxis
+                  domain={[(dataMin: number) => Math.floor(dataMin - 1), (dataMax: number) => Math.ceil(dataMax + 1)]}
+                  tick={{ fontSize: 11 }}
+                  stroke="#94a3b8"
+                  unit=" kg"
+                  width={48}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#ffffff',
+                    borderRadius: '12px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '12px',
+                  }}
+                  formatter={(value) => [`${value} kg`, 'Peso']}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="peso"
+                  name="Peso (kg)"
+                  stroke="#16a34a"
+                  strokeWidth={3}
+                  dot={{ r: 5, fill: '#16a34a', stroke: '#ffffff', strokeWidth: 2 }}
+                  activeDot={{ r: 7 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
-      {/* Gráfico 2: composición (% grasa y músculo) con escalas propias */}
-      {chartData.some((d) => d.grasa != null || d.musculo != null) && (
+      {/* 5. Evolución del IMC con zonas OMS */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-neutral-200">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-sm text-neutral-800 flex items-center">
+            <HeartPulse className="w-4 h-4 mr-1.5 text-emerald-600" />
+            Evolución del IMC
+          </h3>
+          {bmiDiff != null && bmiDiff < 0 ? (
+            <span className="text-xs text-emerald-800 font-semibold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center space-x-1">
+              <TrendingDown className="w-3 h-3 text-emerald-600" />
+              <span>−{Math.abs(bmiDiff)}</span>
+            </span>
+          ) : bmiDiff != null && bmiDiff > 0 ? (
+            <span className="text-xs text-amber-800 font-semibold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md flex items-center space-x-1">
+              <TrendingUp className="w-3 h-3 text-amber-600" />
+              <span>+{bmiDiff}</span>
+            </span>
+          ) : hasBmiSeries ? (
+            <span className="text-xs text-neutral-600 font-semibold bg-neutral-100 px-2 py-0.5 rounded-md">
+              Estable
+            </span>
+          ) : null}
+        </div>
+
+        {!hasValidHeight ? (
+          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-3">
+            Guarda la altura en <strong>Mi Perfil → Datos corporales</strong> para ver esta gráfica.
+          </p>
+        ) : !hasBmiSeries ? (
+          <p className="text-xs text-neutral-500 py-8 text-center">Registra pesajes para ver la evolución del IMC.</p>
+        ) : (
+          <>
+            <div className="h-52 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  {BMI_ZONES.map((zone) => (
+                    <ReferenceArea
+                      key={zone.key}
+                      y1={Math.max(zone.y1, bmiYDomain[0])}
+                      y2={Math.min(zone.y2, bmiYDomain[1])}
+                      fill={zone.fill}
+                      fillOpacity={zone.opacity}
+                      ifOverflow="hidden"
+                    />
+                  ))}
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                  <YAxis
+                    domain={bmiYDomain}
+                    tick={{ fontSize: 11 }}
+                    stroke="#94a3b8"
+                    width={36}
+                    tickFormatter={(v) => String(v)}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#ffffff',
+                      borderRadius: '12px',
+                      border: '1px solid #e2e8f0',
+                      fontSize: '12px',
+                    }}
+                    formatter={(value) => {
+                      const n = typeof value === 'number' ? value : Number(value);
+                      if (!Number.isFinite(n)) return ['—', 'IMC'];
+                      return [`${n} (${getBmiCategory(n).label})`, 'IMC'];
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="imc"
+                    name="IMC"
+                    stroke="#14532d"
+                    strokeWidth={3}
+                    connectNulls
+                    dot={{ r: 5, fill: '#14532d', stroke: '#ffffff', strokeWidth: 2 }}
+                    activeDot={{ r: 7 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mt-2 text-[10px] text-neutral-600">
+              {BMI_ZONES.map((zone) => (
+                <span key={zone.key} className="inline-flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: zone.fill, opacity: 0.85 }} />
+                  {zone.label}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* 6. Composición corporal (si hay datos) */}
+      {hasComposition && (
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-neutral-200">
           <h3 className="font-bold text-sm text-neutral-800 mb-3 flex items-center">
             <TrendingDown className="w-4 h-4 mr-1.5 text-amber-600" />
@@ -499,7 +635,10 @@ export const TrackingPage: React.FC = () => {
                 <YAxis
                   yAxisId="kg"
                   orientation="right"
-                  domain={[(dataMin: number) => Math.max(0, Math.floor((dataMin || 20) - 2)), (dataMax: number) => Math.ceil((dataMax || 30) + 2)]}
+                  domain={[
+                    (dataMin: number) => Math.max(0, Math.floor((dataMin || 20) - 2)),
+                    (dataMax: number) => Math.ceil((dataMax || 30) + 2),
+                  ]}
                   tick={{ fontSize: 10 }}
                   stroke="#0ea5e9"
                   unit=" kg"
@@ -537,13 +676,17 @@ export const TrackingPage: React.FC = () => {
             </ResponsiveContainer>
           </div>
           <div className="flex justify-center gap-4 mt-1 text-[10px] text-neutral-500">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> % Grasa (eje izq.)</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sky-500" /> Músculo kg (eje der.)</span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-amber-500" /> % Grasa (eje izq.)
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-sky-500" /> Músculo kg (eje der.)
+            </span>
           </div>
         </div>
       )}
 
-      {/* Dictamen Clínico Dinámico del Gordólogo */}
+      {/* 7. Parte semanal */}
       <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-sm space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -554,6 +697,7 @@ export const TrackingPage: React.FC = () => {
             </div>
           </div>
           <button
+            type="button"
             onClick={() => setIsCheckInOpen(true)}
             className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center space-x-1.5 transition-colors"
           >
@@ -567,27 +711,41 @@ export const TrackingPage: React.FC = () => {
             <>
               <p>
                 {weightDiff < 0 ? (
-                  <>👏 <strong>¡Progreso excelente!</strong> Llevas acumulada una reducción de <strong>{Math.abs(weightDiff)} kg</strong> respecto a tu registro inicial.</>
+                  <>
+                    👏 <strong>¡Progreso excelente!</strong> Llevas acumulada una reducción de{' '}
+                    <strong>{Math.abs(weightDiff)} kg</strong> respecto a tu registro inicial.
+                  </>
                 ) : weightDiff > 0 ? (
-                  <>⚖️ <strong>Variación registrada:</strong> El peso actual es de <strong>{latest.weight} kg</strong> (+{weightDiff} kg desde el inicio). Mantén la regularidad en las 5 tomas del menú sin saltarte ninguna.</>
+                  <>
+                    ⚖️ <strong>Variación registrada:</strong> El peso actual es de <strong>{latest.weight} kg</strong> (+
+                    {weightDiff} kg desde el inicio). Mantén la regularidad en las 5 tomas del menú sin saltarte ninguna.
+                  </>
                 ) : (
-                  <>🛡️ <strong>Peso firme:</strong> Te encuentras en <strong>{latest.weight} kg</strong>, consolidando tu base metabólica.</>
+                  <>
+                    🛡️ <strong>Peso firme:</strong> Te encuentras en <strong>{latest.weight} kg</strong>, consolidando
+                    tu base metabólica.
+                  </>
                 )}
               </p>
               <div className="flex items-start space-x-2 pt-1 text-emerald-950 bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-200/60">
                 <AlertCircle className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Pauta del protocolo:</strong> Pésate siempre los <strong>{weighDayPlural} por la mañana en ayunas</strong>, tras orinar y con la misma ropa ligera, para que las cifras sean 100% comparables.
+                  <strong>Pauta del protocolo:</strong> Pésate siempre los{' '}
+                  <strong>{weighDayPlural} por la mañana en ayunas</strong>, tras orinar y con la misma ropa ligera,
+                  para que las cifras sean 100% comparables.
                 </span>
               </div>
             </>
           ) : (
-            <p>Registra tu primer pesaje pulsando en &quot;Nuevo Pesaje&quot; para que El Gordólogo empiece a analizar tu evolución.</p>
+            <p>
+              Registra tu primer pesaje pulsando en &quot;Nuevo Pesaje&quot; para que El Gordólogo empiece a analizar
+              tu evolución.
+            </p>
           )}
         </div>
       </div>
 
-      {/* Historial de Mediciones */}
+      {/* 8. Historial */}
       <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-sm">
         <h3 className="font-bold text-sm text-neutral-800 mb-3 flex items-center">
           <Calendar className="w-4 h-4 mr-1.5 text-neutral-500" />
@@ -595,48 +753,57 @@ export const TrackingPage: React.FC = () => {
         </h3>
 
         <div className="space-y-2">
-          {measurements.map((m, idx) => (
-            <div
-              key={m.id}
-              className="flex items-center justify-between p-3 rounded-xl bg-neutral-50 hover:bg-neutral-100/80 transition-colors"
-            >
-              <div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-bold text-neutral-800">{m.date}</span>
-                  {idx === 0 && (
-                    <span className="text-[10px] bg-neutral-200 text-neutral-700 px-1.5 py-0.5 rounded font-medium">
-                      Inicial
+          {measurements.length === 0 && (
+            <p className="text-xs text-neutral-500 text-center py-4">Todavía no hay registros.</p>
+          )}
+          {measurements.map((m, idx) => {
+            const rowBmi = storageService.calcBmi(m.weight, activeUser.height) ?? m.bmi;
+            return (
+              <div
+                key={m.id}
+                className="flex items-center justify-between p-3 rounded-xl bg-neutral-50 hover:bg-neutral-100/80 transition-colors"
+              >
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-bold text-neutral-800">{m.date}</span>
+                    {idx === 0 && (
+                      <span className="text-[10px] bg-neutral-200 text-neutral-700 px-1.5 py-0.5 rounded font-medium">
+                        Inicial
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-3 mt-1 text-[11px] text-neutral-500">
+                    <span>
+                      IMC: <strong>{rowBmi ?? '--'}</strong>
                     </span>
+                    <span>
+                      Grasa: <strong>{m.fatPercent ? `${m.fatPercent}%` : '--'}</strong>
+                    </span>
+                    <span>
+                      Músculo: <strong>{m.skeletalMuscle ? `${m.skeletalMuscle}kg` : '--'}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm font-bold text-primary-700">{m.weight} kg</span>
+                  {measurements.length > 1 && idx > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(m.id)}
+                      title="Eliminar registro"
+                      className="p-1 text-neutral-300 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   )}
                 </div>
-                <div className="flex items-center space-x-3 mt-1 text-[11px] text-neutral-500">
-                  <span>
-                    IMC:{' '}
-                    <strong>{storageService.calcBmi(m.weight, activeUser.height) ?? m.bmi ?? '--'}</strong>
-                  </span>
-                  <span>Grasa: <strong>{m.fatPercent ? `${m.fatPercent}%` : '--'}</strong></span>
-                  <span>Músculo: <strong>{m.skeletalMuscle ? `${m.skeletalMuscle}kg` : '--'}</strong></span>
-                </div>
               </div>
-
-              <div className="flex items-center space-x-2">
-                <span className="text-sm font-bold text-primary-700">{m.weight} kg</span>
-                {measurements.length > 1 && idx > 0 && (
-                  <button
-                    onClick={() => handleDelete(m.id)}
-                    title="Eliminar registro"
-                    className="p-1 text-neutral-300 hover:text-red-500 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
-      {/* Modal de Entrevista Semanal Interactivo */}
       <WeeklyCheckInModal
         isOpen={isCheckInOpen}
         onClose={() => setIsCheckInOpen(false)}
