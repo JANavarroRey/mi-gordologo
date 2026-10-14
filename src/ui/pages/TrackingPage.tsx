@@ -589,30 +589,32 @@ export const TrackingPage: React.FC = () => {
           })}
         </div>
         {chartPeriod === 'custom' && (
-          <div className="grid grid-cols-2 gap-2">
-            <div className="min-w-0">
-              <label className="block text-[11px] font-semibold text-neutral-600 mb-1">Desde</label>
+          <div className="flex flex-col gap-2.5">
+            <div className="w-full min-w-0 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50/60 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-400">
+              <label className="block text-[11px] font-semibold text-neutral-600 px-3 pt-2">Desde</label>
               <input
                 type="date"
                 value={customFrom}
                 max={customTo || undefined}
                 onChange={(e) => setCustomFrom(e.target.value)}
-                className="w-full min-w-0 max-w-full box-border text-sm p-2.5 rounded-xl border border-neutral-200 focus:ring-2 focus:ring-primary-500"
+                className="block w-full min-w-0 max-w-full box-border text-sm px-3 pb-2.5 pt-1 bg-transparent border-0 outline-none focus:ring-0"
               />
             </div>
-            <div className="min-w-0">
-              <label className="block text-[11px] font-semibold text-neutral-600 mb-1">Hasta</label>
+            <div className="w-full min-w-0 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50/60 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-400">
+              <label className="block text-[11px] font-semibold text-neutral-600 px-3 pt-2">Hasta</label>
               <input
                 type="date"
                 value={customTo}
                 min={customFrom || undefined}
                 onChange={(e) => setCustomTo(e.target.value)}
-                className="w-full min-w-0 max-w-full box-border text-sm p-2.5 rounded-xl border border-neutral-200 focus:ring-2 focus:ring-primary-500"
+                className="block w-full min-w-0 max-w-full box-border text-sm px-3 pb-2.5 pt-1 bg-transparent border-0 outline-none focus:ring-0"
               />
             </div>
           </div>
         )}
-        {periodHint && <p className="text-[11px] text-neutral-500">{periodHint}</p>}
+        {chartPeriod !== 'custom' && periodHint && (
+          <p className="text-[11px] text-neutral-500">{periodHint}</p>
+        )}
       </div>
 
       {/* 5. Evolución del peso */}

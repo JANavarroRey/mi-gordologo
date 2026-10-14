@@ -83,6 +83,13 @@ button, a {
   outline-offset: 2px;
 }
 
+/* Evita que input date nativo desborde en móvil (Chrome/Android) */
+input[type='date'] {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
 /* === ESTILOS DE IMPRESIÓN — 1 HOJA A4 HORIZONTAL === */
 @media print {
   @page {
