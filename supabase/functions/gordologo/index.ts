@@ -49,12 +49,14 @@ type UserRow = {
   activity_level: string | null;
   goal: string | null;
   settings: Record<string, unknown> | null;
+  known_password: string | null;
   created_at: string;
 };
 
-function publicUser(row: UserRow) {
+function publicUser(row: UserRow, includePassword = false) {
   const rawSettings = { ...(row.settings || {}) };
   delete rawSettings.passwordRecovery;
+  delete rawSettings.knownPassword;
   return {
     id: row.id,
     name: row.name,
@@ -70,7 +72,19 @@ function publicUser(row: UserRow) {
     linkedMenuUserId: null,
     createdAt: row.created_at,
     settings: rawSettings,
+    knownPassword: includePassword && row.known_password ? String(row.known_password) : null,
   };
+}
+
+async function saveKnownPassword(
+  sb: ReturnType<typeof serviceClient>,
+  userId: string,
+  password: string
+) {
+  await sb
+    .from('app_users')
+    .update({ known_password: password, updated_at: new Date().toISOString() })
+    .eq('id', userId);
 }
 
 function systemInstruction(profile?: { name?: string; age?: number; targetCalories?: number }, skipCalorieRules = false) {
@@ -183,9 +197,9 @@ function extractBearer(req: Request): string | null {
   return m ? m[1].trim() : null;
 }
 
-async function listUsers(sb: ReturnType<typeof serviceClient>) {
+async function listUsers(sb: ReturnType<typeof serviceClient>, includePasswords = false) {
   const { data } = await sb.from('app_users').select('*').order('created_at');
-  return (data || []).map((row) => publicUser(row as UserRow));
+  return (data || []).map((row) => publicUser(row as UserRow, includePasswords));
 }
 
 async function ensureAdminRow(sb: ReturnType<typeof serviceClient>) {
@@ -413,8 +427,8 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Enlace propio a Pages (no dependemos del redirect de Supabase → localhost).
-      const actionLink = `${PROD_APP}/#/restablecer-clave?th=${encodeURIComponent(hashedToken)}`;
+      // Query ANTES del hash: Gmail/Safari no rompen ?th=… (sí suelen romper #/ruta?th=).
+      const actionLink = `${PROD_APP}/?th=${encodeURIComponent(hashedToken)}#/restablecer-clave`;
       try {
         await sendMailViaGmail({
           smtpUser: mail.user,
@@ -551,11 +565,15 @@ Deno.serve(async (req) => {
 
     if (action === 'getMyProfile') {
       if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      // Recarga fila para traer known_password actualizado
+      const { data: fresh } = await sb.from('app_users').select('*').eq('id', ctx.auth.id).maybeSingle();
+      const authRow = (fresh || ctx.auth) as UserRow;
       return json({
         ok: true,
-        authUser: publicUser(ctx.auth),
-        actingUser: publicUser(ctx.acting),
-        status: ctx.auth.status,
+        authUser: publicUser(authRow, true),
+        actingUser: publicUser(ctx.acting, ctx.acting.id === authRow.id),
+        status: authRow.status,
+        knownPassword: authRow.known_password || null,
       });
     }
 
@@ -763,16 +781,19 @@ Deno.serve(async (req) => {
       const { data: menus } = await sb.from('user_menus').select('*').eq('user_id', uid).maybeSingle();
       const { data: meas } = await sb.from('user_measurements').select('*').eq('user_id', uid).maybeSingle();
       const { data: admin } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
-      const users =
-        ctx.auth.role === 'superadmin'
-          ? await listUsers(sb)
-          : [publicUser(ctx.auth)];
+      const isAdmin = ctx.auth.role === 'superadmin';
+      const { data: authFresh } = await sb.from('app_users').select('*').eq('id', ctx.auth.id).maybeSingle();
+      const authRow = (authFresh || ctx.auth) as UserRow;
+      const users = isAdmin
+        ? await listUsers(sb, true)
+        : [publicUser(authRow, true)];
       return json({
         ok: true,
         hasGemini: Boolean(admin?.gemini_api_key),
-        authUser: publicUser(ctx.auth),
-        actingUser: publicUser(ctx.acting),
+        authUser: publicUser(authRow, true),
+        actingUser: publicUser(ctx.acting, ctx.acting.id === authRow.id),
         users,
+        knownPassword: authRow.known_password || null,
         menus: menus?.weeks ?? null,
         menusEdited: Boolean(menus?.edited),
         menusUpdatedAt: menus?.updated_at ?? null,
@@ -904,13 +925,44 @@ Deno.serve(async (req) => {
       const tempPassword = chosen || randomTempPassword(12);
       const { error } = await sb.auth.admin.updateUserById(authUid, { password: tempPassword });
       if (error) return json({ ok: false, error: error.message }, 500);
+      await saveKnownPassword(sb, targetId, tempPassword);
+      const { data: refreshed } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
       return json({
         ok: true,
         tempPassword,
-        user: publicUser(target as UserRow),
-        message: chosen
-          ? 'Contraseña actualizada. Guárdala: el servidor no podrá volver a mostrarla después.'
-          : 'Contraseña temporal generada. Compártela por un canal seguro.',
+        user: publicUser((refreshed || target) as UserRow, true),
+        message: 'Contraseña actualizada y visible en Perfil / Superadmin.',
+      });
+    }
+
+    // Guarda clave en Auth + known_password (visible en Perfil / Superadmin).
+    if (action === 'saveKnownPassword') {
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      const password = String(payload.password || '').trim();
+      if (password.length < 6) {
+        return json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' }, 400);
+      }
+      const targetId = String(payload.userId || ctx.auth.id);
+      if (ctx.auth.role !== 'superadmin' && targetId !== ctx.auth.id) {
+        return json({ ok: false, error: 'Solo puedes guardar tu propia contraseña.' }, 403);
+      }
+      const { data: target } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
+      if (!target) return json({ ok: false, error: 'Perfil no encontrado.' }, 404);
+      const authUid = (target as UserRow).auth_user_id;
+      if (!authUid) {
+        return json({ ok: false, error: 'Ese perfil no tiene cuenta de email vinculada.' }, 400);
+      }
+      const { error } = await sb.auth.admin.updateUserById(authUid, { password });
+      if (error) return json({ ok: false, error: error.message }, 500);
+      await saveKnownPassword(sb, targetId, password);
+      const { data } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
+      return json({
+        ok: true,
+        user: data ? publicUser(data as UserRow, true) : null,
+        knownPassword: password,
+        message: 'Contraseña guardada. Ya puedes verla en tu perfil.',
       });
     }
 

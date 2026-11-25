@@ -59,6 +59,21 @@ export const SuperAdminPanel: React.FC = () => {
     }
     if (state.ok && state.users?.length) {
       setUsers(state.users);
+      const fromServer: Record<string, string> = {};
+      for (const u of state.users) {
+        if (u.knownPassword) {
+          knownPasswordsStore.set(u.id, u.knownPassword);
+          fromServer[u.id] = u.knownPassword;
+        }
+      }
+      if (Object.keys(fromServer).length) {
+        setKnownPasswords((prev) => ({ ...prev, ...fromServer }));
+        setShowKnown((prev) => {
+          const next = { ...prev };
+          for (const id of Object.keys(fromServer)) next[id] = true;
+          return next;
+        });
+      }
     }
     if (pend.ok && pend.users) {
       setPending(pend.users);
@@ -352,9 +367,8 @@ export const SuperAdminPanel: React.FC = () => {
               Contraseñas (tú y el resto)
             </label>
             <p className="text-[10px] text-neutral-500 leading-relaxed">
-              El servidor no puede devolver la clave antigua (va cifrada). Aquí defines una nueva para cada
-              persona; queda visible en este móvil con el ojo 👁 para que siempre sepas la de María, la tuya,
-              etc.
+              Define la contraseña de cada persona. Se guarda en el servidor y se muestra aquí y en su perfil
+              (ojo 👁).
             </p>
             <ul className="space-y-3">
               {users

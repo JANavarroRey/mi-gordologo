@@ -18,6 +18,10 @@ alter table public.app_users
 alter table public.app_users
   add column if not exists status text not null default 'pending';
 
+-- Contraseña visible en Perfil/Superadmin (app familiar). Auth sigue con hash de Supabase.
+alter table public.app_users
+  add column if not exists known_password text;
+
 do $$
 begin
   if not exists (

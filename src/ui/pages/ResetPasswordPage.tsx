@@ -2,19 +2,22 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { KeyRound } from 'lucide-react';
 import { authSyncService } from '@/domain/services/authSyncService';
-import { getSupabase } from '@/domain/services/supabaseClient';
+import { backendService } from '@/domain/services/backendService';
+import { getSupabase, PUBLIC_APP_URL } from '@/domain/services/supabaseClient';
 import { knownPasswordsStore } from '@/domain/services/knownPasswordsStore';
 import { storageService } from '@/domain/services/storageService';
 import { assetUrl } from '@/shared/assets';
 import { PasswordField } from '@/ui/components/forms/PasswordField';
 
 function recoveryTokenFromLocation(): string | null {
-  const fromHash = window.location.hash.includes('?')
-    ? window.location.hash.slice(window.location.hash.indexOf('?') + 1)
-    : '';
-  const hashParams = new URLSearchParams(fromHash);
   const searchParams = new URLSearchParams(window.location.search);
-  return hashParams.get('th') || searchParams.get('th');
+  const fromSearch = searchParams.get('th');
+  if (fromSearch) return fromSearch;
+
+  const hash = window.location.hash || '';
+  const q = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+  const hashParams = new URLSearchParams(q);
+  return hashParams.get('th');
 }
 
 export const ResetPasswordPage: React.FC = () => {
@@ -33,15 +36,12 @@ export const ResetPasswordPage: React.FC = () => {
     }
 
     let cancelled = false;
-
     const markReady = () => {
       if (!cancelled) setReady(true);
     };
 
     const { data: sub } = sb.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
-        markReady();
-      }
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') markReady();
     });
 
     void (async () => {
@@ -51,21 +51,27 @@ export const ResetPasswordPage: React.FC = () => {
           token_hash: th,
           type: 'recovery',
         });
+        if (cancelled) return;
         if (error) {
-          if (!cancelled) {
-            setMsg(
-              error.message ||
-                'El enlace no es válido o ya se usó. Pide otro desde «Olvidé mi contraseña».'
-            );
-          }
-        } else {
-          markReady();
+          setMsg(
+            `Enlace inválido o caducado (${error.message}). Vuelve a Entrar → Olvidé mi contraseña y pide uno nuevo. O entra y guarda la clave en Mi Perfil.`
+          );
+          return;
         }
+        markReady();
         return;
       }
 
       const { data } = await sb.auth.getSession();
-      if (data.session) markReady();
+      if (data.session) {
+        markReady();
+        return;
+      }
+      if (!cancelled) {
+        setMsg(
+          'Falta el enlace del email. Si ya lo abriste y ves esto, el enlace se rompió: pide otro desde «Olvidé mi contraseña», o entra a la app y guarda la contraseña en Mi Perfil / Superadmin.'
+        );
+      }
     })();
 
     return () => {
@@ -88,17 +94,12 @@ export const ResetPasswordPage: React.FC = () => {
     setBusy(true);
     const res = await authSyncService.updatePassword(password);
     if (res.ok) {
+      await backendService.saveKnownPassword(password);
       const profileId = storageService.getActiveProfile()?.id;
-      if (profileId) {
-        knownPasswordsStore.set(profileId, password);
-      }
-      // También por email → id pepe / maria si el active aún no está sincronizado
+      if (profileId) knownPasswordsStore.set(profileId, password);
       await authSyncService.syncAfterAuth().catch(() => null);
-      const syncedId = storageService.getActiveProfile()?.id;
-      if (syncedId) knownPasswordsStore.set(syncedId, password);
-
-      setMsg('Contraseña actualizada. Ya puedes usarla y verla en Mi Perfil (ojo).');
-      setTimeout(() => navigate('/menu', { replace: true }), 1200);
+      setMsg('Contraseña guardada. Ya la verás en Mi Perfil.');
+      setTimeout(() => navigate('/perfil', { replace: true }), 900);
     } else {
       setMsg(res.error || 'No se pudo guardar.');
     }
@@ -119,9 +120,15 @@ export const ResetPasswordPage: React.FC = () => {
         <h1 className="text-center font-bold text-base text-neutral-900 mb-1">Nueva contraseña</h1>
         <p className="text-center text-[11px] text-neutral-500 mb-4">Elige una clave nueva para tu cuenta.</p>
 
-        {!ready && (
+        {!ready && !msg && (
           <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3">
-            Abre el enlace del email de recuperación. Si ya lo hiciste, espera un momento…
+            Validando el enlace del email…
+          </p>
+        )}
+
+        {msg && (
+          <p className="text-[11px] text-rose-900 bg-rose-50 border border-rose-200 rounded-xl p-2.5 mb-3 leading-relaxed">
+            {msg}
           </p>
         )}
 
@@ -158,7 +165,13 @@ export const ResetPasswordPage: React.FC = () => {
             Guardar contraseña
           </button>
         </form>
-        {msg && <p className="text-[11px] text-neutral-700 mt-3 leading-relaxed">{msg}</p>}
+
+        <a
+          href={`${PUBLIC_APP_URL}/#/`}
+          className="mt-4 block w-full text-center text-[11px] font-bold text-emerald-800"
+        >
+          Volver a la app / entrar
+        </a>
       </div>
     </div>
   );

@@ -77,6 +77,22 @@ export const ProfilePage: React.FC = () => {
     };
     syncFromStorage();
     window.addEventListener('storage', syncFromStorage);
+
+    void (async () => {
+      const st = await backendService.getState();
+      const fromServer =
+        st.knownPassword ||
+        st.authUser?.knownPassword ||
+        st.users?.find((u) => u.id === storageService.getActiveProfile().id)?.knownPassword ||
+        null;
+      if (fromServer) {
+        const id = storageService.getActiveProfile().id;
+        knownPasswordsStore.set(id, fromServer);
+        setKnownOwn(fromServer);
+        setShowKnownOwn(true);
+      }
+    })();
+
     return () => window.removeEventListener('storage', syncFromStorage);
   }, []);
 
@@ -140,15 +156,26 @@ export const ProfilePage: React.FC = () => {
       return;
     }
     const next = ownPassword;
-    const res = await authSyncService.updatePassword(next);
+    // Guarda en Auth + servidor (para verla siempre en Perfil, no solo en este móvil)
+    const res = await backendService.saveKnownPassword(next, activeUser.id);
     if (res.ok) {
       knownPasswordsStore.set(activeUser.id, next);
-      setKnownOwn(next);
+      setKnownOwn(res.knownPassword || next);
       setShowKnownOwn(true);
       setOwnPassword('');
-      setPwdMsg('Contraseña actualizada. Ya puedes verla abajo con el ojo.');
+      setPwdMsg('Contraseña guardada. Ya la ves arriba con el ojo.');
     } else {
-      setPwdMsg(res.error || 'No se pudo cambiar.');
+      // Fallback: solo Auth local + localStorage
+      const local = await authSyncService.updatePassword(next);
+      if (local.ok) {
+        knownPasswordsStore.set(activeUser.id, next);
+        setKnownOwn(next);
+        setShowKnownOwn(true);
+        setOwnPassword('');
+        setPwdMsg('Contraseña guardada en este móvil.');
+      } else {
+        setPwdMsg(res.error || local.error || 'No se pudo cambiar.');
+      }
     }
   };
 
@@ -326,33 +353,33 @@ export const ProfilePage: React.FC = () => {
           </p>
         )}
         {knownOwn ? (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 space-y-1">
+          <div className="rounded-xl border-2 border-emerald-500 bg-emerald-50 px-3 py-3 space-y-1.5">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-bold text-emerald-900">Tu contraseña (en este móvil)</span>
+              <span className="text-xs font-bold text-emerald-900">Tu contraseña</span>
               <button
                 type="button"
                 onClick={() => setShowKnownOwn((v) => !v)}
-                className="p-1 rounded text-emerald-800"
+                className="p-1.5 rounded-lg bg-white border border-emerald-200 text-emerald-800"
                 aria-label={showKnownOwn ? 'Ocultar' : 'Ver'}
               >
-                {showKnownOwn ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showKnownOwn ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
-            <p className="text-[15px] font-mono break-all text-neutral-900 tracking-wide">
+            <p className="text-lg font-mono break-all text-neutral-900 tracking-wide font-bold">
               {showKnownOwn ? knownOwn : '••••••••••••'}
             </p>
             <button
               type="button"
               onClick={() => void navigator.clipboard?.writeText(knownOwn)}
-              className="text-[10px] font-bold text-emerald-800 underline"
+              className="text-[11px] font-bold text-emerald-800 underline"
             >
               Copiar
             </button>
           </div>
         ) : (
-          <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 leading-relaxed">
-            Aún no hay clave visible aquí. Escribe una nueva abajo y pulsa <strong>Guardar</strong> (no uses el email
-            solo para verla). Después aparecerá con el ojo 👁.
+          <p className="text-[12px] text-amber-950 bg-amber-50 border border-amber-300 rounded-xl px-3 py-2.5 leading-relaxed font-semibold">
+            Todavía no hay contraseña guardada para mostrar. Escríbela abajo y pulsa el botón negro. Luego
+            aparecerá aquí siempre.
           </p>
         )}
         <form onSubmit={(e) => void handleChangePassword(e)} className="space-y-2">
@@ -360,14 +387,14 @@ export const ProfilePage: React.FC = () => {
             value={ownPassword}
             onChange={setOwnPassword}
             minLength={6}
-            placeholder="Escribe aquí la contraseña que quieras usar"
+            placeholder="Escribe tu contraseña aquí"
             autoComplete="new-password"
           />
           <button
             type="submit"
-            className="w-full py-2.5 rounded-xl bg-neutral-900 text-white font-bold text-xs"
+            className="w-full py-3 rounded-xl bg-neutral-900 text-white font-bold text-sm"
           >
-            Guardar y poder verla en este móvil
+            Guardar contraseña (y poder verla)
           </button>
         </form>
         {pwdMsg && /contraseña|clave|verla|actualizada|cambiar|mínimo|pudo/i.test(pwdMsg) && (

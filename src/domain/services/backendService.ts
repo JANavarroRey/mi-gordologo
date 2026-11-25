@@ -25,6 +25,7 @@ export type RemoteUser = {
   linkedMenuUserId?: string | null;
   createdAt?: string;
   settings?: Record<string, unknown>;
+  knownPassword?: string | null;
 };
 
 export type GordologoResponse = {
@@ -38,6 +39,7 @@ export type GordologoResponse = {
   hasMailSmtp?: boolean;
   mailSmtpUser?: string | null;
   tempPassword?: string;
+  knownPassword?: string | null;
   pending?: boolean;
   status?: string;
   token?: string;
@@ -226,6 +228,15 @@ export const backendService = {
       action: password ? 'adminSetPassword' : 'adminResetPassword',
       userId,
       ...(password ? { password } : {}),
+    });
+  },
+
+  /** Guarda (y actualiza Auth) la contraseña para poder verla en Perfil. */
+  saveKnownPassword(password: string, userId?: string) {
+    return this.call({
+      action: 'saveKnownPassword',
+      password,
+      ...(userId ? { userId } : {}),
     });
   },
 
