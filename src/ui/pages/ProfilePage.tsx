@@ -15,6 +15,7 @@ import { assetUrl } from '@/shared/assets';
 import type { FoodIntake, UserProfile } from '@/domain/models/types';
 import { importMenuFromPdf, personalizeFromIntake, type MenuImportResult } from '@/domain/services/menuPersonalizeService';
 import { formatKcalLabel } from '@/domain/services/calorieEstimateService';
+import { PasswordField } from '@/ui/components/forms/PasswordField';
 
 const WEEKDAY_LABELS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'] as const;
 
@@ -314,14 +315,14 @@ export const ProfilePage: React.FC = () => {
             Email: <span className="font-semibold">{activeUser.email}</span>
           </p>
         )}
-        <form onSubmit={(e) => void handleChangePassword(e)} className="flex gap-2">
-          <input
-            type="password"
+        <form onSubmit={(e) => void handleChangePassword(e)} className="flex gap-2 items-stretch">
+          <PasswordField
             value={ownPassword}
-            onChange={(e) => setOwnPassword(e.target.value)}
+            onChange={setOwnPassword}
             minLength={6}
             placeholder="Nueva contraseña de tu cuenta"
-            className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 min-w-0"
+            autoComplete="new-password"
+            className="flex-1 min-w-0"
           />
           <button type="submit" className="px-3 py-2 rounded-xl bg-neutral-900 text-white font-bold text-xs shrink-0">
             Cambiar

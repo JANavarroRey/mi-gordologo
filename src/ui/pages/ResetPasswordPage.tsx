@@ -4,6 +4,7 @@ import { KeyRound } from 'lucide-react';
 import { authSyncService } from '@/domain/services/authSyncService';
 import { getSupabase } from '@/domain/services/supabaseClient';
 import { assetUrl } from '@/shared/assets';
+import { PasswordField } from '@/ui/components/forms/PasswordField';
 
 export const ResetPasswordPage: React.FC = () => {
   const navigate = useNavigate();
@@ -77,26 +78,24 @@ export const ResetPasswordPage: React.FC = () => {
             <label className="flex items-center gap-1 text-[11px] font-bold text-neutral-700 mb-1">
               <KeyRound className="w-3.5 h-3.5" /> Contraseña nueva
             </label>
-            <input
-              type="password"
+            <PasswordField
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
               minLength={6}
               required
               disabled={!ready}
-              className="w-full text-xs p-2.5 rounded-xl border border-neutral-200 disabled:bg-neutral-50"
+              autoComplete="new-password"
             />
           </div>
           <div>
             <label className="block text-[11px] font-bold text-neutral-700 mb-1">Repetir contraseña</label>
-            <input
-              type="password"
+            <PasswordField
               value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
+              onChange={setConfirm}
               minLength={6}
               required
               disabled={!ready}
-              className="w-full text-xs p-2.5 rounded-xl border border-neutral-200 disabled:bg-neutral-50"
+              autoComplete="new-password"
             />
           </div>
           <button

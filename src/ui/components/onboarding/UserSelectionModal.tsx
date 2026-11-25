@@ -6,6 +6,7 @@ import { authSyncService } from '@/domain/services/authSyncService';
 import { getAccessToken, getSupabase } from '@/domain/services/supabaseClient';
 import { assetUrl } from '@/shared/assets';
 import type { UserProfile } from '@/domain/models/types';
+import { PasswordField, fieldInputClass } from '@/ui/components/forms/PasswordField';
 
 interface Props {
   isOpen: boolean;
@@ -299,7 +300,7 @@ export const UserSelectionModal: React.FC<Props> = ({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+                className={fieldInputClass}
               />
             </div>
             <div>
@@ -309,18 +310,17 @@ export const UserSelectionModal: React.FC<Props> = ({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+                className={fieldInputClass}
               />
             </div>
             <div>
               <label className="block text-[11px] font-bold text-neutral-700 mb-1">Contraseña (mín. 8)</label>
-              <input
-                type="password"
+              <PasswordField
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 minLength={8}
                 required
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+                autoComplete="new-password"
               />
             </div>
             <button
@@ -345,21 +345,19 @@ export const UserSelectionModal: React.FC<Props> = ({
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+                className={fieldInputClass}
               />
             </div>
             <div>
               <label className="flex items-center gap-1 text-[11px] font-bold text-neutral-700 mb-1">
                 <Lock className="w-3.5 h-3.5" /> Contraseña
               </label>
-              <input
-                type="password"
+              <PasswordField
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 minLength={6}
                 required
                 autoComplete="current-password"
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
               />
             </div>
             <button
@@ -391,7 +389,7 @@ export const UserSelectionModal: React.FC<Props> = ({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+                className={fieldInputClass}
               />
             </div>
             <div>
@@ -401,18 +399,17 @@ export const UserSelectionModal: React.FC<Props> = ({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+                className={fieldInputClass}
               />
             </div>
             <div>
               <label className="block text-[11px] font-bold text-neutral-700 mb-1">Contraseña (mín. 6)</label>
-              <input
-                type="password"
+              <PasswordField
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 minLength={6}
                 required
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+                autoComplete="new-password"
               />
             </div>
             <p className="text-[10px] text-neutral-500 leading-relaxed">
@@ -446,7 +443,7 @@ export const UserSelectionModal: React.FC<Props> = ({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+                className={fieldInputClass}
               />
             </div>
             <button

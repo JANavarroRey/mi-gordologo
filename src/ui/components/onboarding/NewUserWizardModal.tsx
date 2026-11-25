@@ -5,6 +5,7 @@ import { backendService } from '@/domain/services/backendService';
 import { getHospitalMenuSeed } from '@/data/hospitalMenuSeed';
 import { computeTargetCalories, scaleWeekMenus } from '@/domain/services/menuScaleService';
 import type { UserProfile } from '@/domain/models/types';
+import { PasswordField, fieldInputClass } from '@/ui/components/forms/PasswordField';
 
 interface Props {
   isOpen: boolean;
@@ -285,18 +286,17 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+              className={fieldInputClass}
             />
           </div>
           <div>
             <label className="block text-xs font-bold text-neutral-700 mb-1">Contraseña (mín. 6)</label>
-            <input
-              type="password"
+            <PasswordField
+              value={password}
+              onChange={setPassword}
               required
               minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+              autoComplete="new-password"
             />
             <p className="text-[10px] text-neutral-500 mt-1">
               Se crea ya aprobado (alta familiar). También pueden registrarse solos y tú los apruebas.

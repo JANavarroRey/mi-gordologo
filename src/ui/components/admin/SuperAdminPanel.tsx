@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Shield, Sparkles, Link2, UserCheck, UserX, Mail, KeyRound } from 'lucide-react';
+import { Shield, Sparkles, Link2, UserCheck, UserX, Mail, KeyRound, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { backendService } from '@/domain/services/backendService';
 import type { RemoteUser } from '@/domain/services/backendService';
 import { storageService } from '@/domain/services/storageService';
 import { authSyncService } from '@/domain/services/authSyncService';
+import { PasswordField, fieldInputClass } from '@/ui/components/forms/PasswordField';
 
 export const SuperAdminPanel: React.FC = () => {
   const [status, setStatus] = useState<{
@@ -15,12 +16,15 @@ export const SuperAdminPanel: React.FC = () => {
   const [geminiKey, setGeminiKey] = useState('');
   const [smtpUser, setSmtpUser] = useState('');
   const [smtpPass, setSmtpPass] = useState('');
+  const [editMail, setEditMail] = useState(false);
   const [users, setUsers] = useState<RemoteUser[]>([]);
   const [pending, setPending] = useState<RemoteUser[]>([]);
   const [linkUserId, setLinkUserId] = useState('');
   const [linkTargetId, setLinkTargetId] = useState('');
   const [tempPasswords, setTempPasswords] = useState<Record<string, string>>({});
+  const [showTemp, setShowTemp] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState<string | null>(null);
+  const [msgOk, setMsgOk] = useState(true);
   const [busy, setBusy] = useState(false);
   const localProfiles = storageService.getProfiles();
 
@@ -40,6 +44,9 @@ export const SuperAdminPanel: React.FC = () => {
       hasMailSmtp: Boolean(st.hasMailSmtp),
       mailSmtpUser: st.mailSmtpUser || null,
     });
+    if (st.mailSmtpUser && !smtpUser) {
+      setSmtpUser(st.mailSmtpUser);
+    }
     if (state.ok && state.users?.length) {
       setUsers(state.users);
     }
@@ -52,7 +59,13 @@ export const SuperAdminPanel: React.FC = () => {
 
   useEffect(() => {
     void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const flash = (text: string, ok = true) => {
+    setMsg(text);
+    setMsgOk(ok);
+  };
 
   const onSaveGemini = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,10 +74,10 @@ export const SuperAdminPanel: React.FC = () => {
     const res = await backendService.setGeminiKey(geminiKey);
     if (res.ok) {
       setGeminiKey('');
-      setMsg('Clave Gemini guardada en el servidor. Todos los perfiles logueados la usarán.');
+      flash('Clave Gemini guardada en el servidor. Todos los perfiles logueados la usarán.');
       await refresh();
     } else {
-      setMsg(res.error || 'No se pudo guardar la clave.');
+      flash(res.error || 'No se pudo guardar la clave.', false);
     }
     setBusy(false);
   };
@@ -76,12 +89,11 @@ export const SuperAdminPanel: React.FC = () => {
     const res = await backendService.setMailSmtp(smtpUser, smtpPass);
     if (res.ok) {
       setSmtpPass('');
-      setMsg(
-        'Gmail SMTP guardado. “Olvidé mi contraseña” ya puede enviar a Gmail, Hotmail, etc. (gratis).'
-      );
+      setEditMail(false);
+      flash('Email de recuperación guardado correctamente.');
       await refresh();
     } else {
-      setMsg(res.error || 'No se pudo guardar el correo.');
+      flash(res.error || 'No se pudo guardar el correo.', false);
     }
     setBusy(false);
   };
@@ -91,10 +103,10 @@ export const SuperAdminPanel: React.FC = () => {
     setMsg(null);
     const res = await backendService.setUserStatus(userId, next);
     if (res.ok) {
-      setMsg(next === 'approved' ? 'Usuario aprobado. Ya puede entrar.' : 'Usuario rechazado.');
+      flash(next === 'approved' ? 'Usuario aprobado. Ya puede entrar.' : 'Usuario rechazado.');
       await refresh();
     } else {
-      setMsg(res.error || 'No se pudo actualizar el estado.');
+      flash(res.error || 'No se pudo actualizar el estado.', false);
     }
     setBusy(false);
   };
@@ -105,20 +117,23 @@ export const SuperAdminPanel: React.FC = () => {
     const res = await backendService.adminResetPassword(userId);
     if (res.ok && res.tempPassword) {
       setTempPasswords((t) => ({ ...t, [userId]: res.tempPassword || '' }));
-      setMsg(`Contraseña temporal para ${res.user?.name || 'usuario'}: ${res.tempPassword}`);
+      setShowTemp((t) => ({ ...t, [userId]: true }));
+      flash(
+        `Contraseña temporal creada para ${res.user?.name || 'usuario'}. Cópiala y pásasela; la anterior ya no vale.`
+      );
     } else {
-      setMsg(res.error || 'No se pudo generar la contraseña.');
+      flash(res.error || 'No se pudo generar la contraseña.', false);
     }
     setBusy(false);
   };
 
   const onLinkMenus = () => {
     if (!linkUserId) {
-      setMsg('Elige qué perfil compartirá el menú de otro.');
+      flash('Elige qué perfil compartirá el menú de otro.', false);
       return;
     }
     storageService.setLinkedMenuUser(linkUserId, linkTargetId || null);
-    setMsg(
+    flash(
       linkTargetId
         ? `${storageService.getProfileById(linkUserId)?.name} usará el mismo menú que ${storageService.getProfileById(linkTargetId)?.name}.`
         : `${storageService.getProfileById(linkUserId)?.name} vuelve a tener menú propio.`
@@ -131,12 +146,15 @@ export const SuperAdminPanel: React.FC = () => {
     setMsg(null);
     try {
       await authSyncService.resetAllMenusToHospitalSeed();
-      setMsg('Todos los perfiles vuelven al menú hospitalario de 1.500 kcal (8 semanas).');
+      flash('Todos los perfiles vuelven al menú hospitalario de 1.500 kcal (8 semanas).');
     } catch {
-      setMsg('No se pudieron resetear los menús.');
+      flash('No se pudieron resetear los menús.', false);
     }
     setBusy(false);
   };
+
+  const mailConfigured = Boolean(status?.hasMailSmtp);
+  const showMailForm = !mailConfigured || editMail;
 
   return (
     <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-3">
@@ -176,7 +194,7 @@ export const SuperAdminPanel: React.FC = () => {
               required
               autoComplete="off"
               spellCheck={false}
-              className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 font-mono min-w-0"
+              className={`${fieldInputClass} font-mono`}
             />
             <button
               type="submit"
@@ -190,41 +208,85 @@ export const SuperAdminPanel: React.FC = () => {
       )}
 
       {status?.backend && (
-        <form onSubmit={(e) => void onSaveMailSmtp(e)} className="space-y-2 pt-2 border-t border-neutral-100">
+        <div className="space-y-2 pt-2 border-t border-neutral-100">
           <label className="flex items-center gap-1.5 text-[11px] font-bold text-neutral-700">
             <Mail className="w-3.5 h-3.5 text-emerald-600" />
             Email de recuperación (Gmail gratis)
           </label>
-          <p className="text-[10px] text-neutral-500 leading-relaxed">
-            1) En tu Google: Seguridad → Verificación en 2 pasos (activada) → Contraseñas de aplicaciones → crear una
-            para «Correo». 2) Pega aquí tu Gmail y esa contraseña de 16 caracteres (no la normal). Así se envían
-            recuperaciones a cualquier Gmail/Hotmail sin comprar dominio.
-          </p>
-          <input
-            type="email"
-            value={smtpUser}
-            onChange={(e) => setSmtpUser(e.target.value)}
-            placeholder={status.mailSmtpUser || 'tunombre@gmail.com'}
-            required
-            className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
-          />
-          <input
-            type="password"
-            value={smtpPass}
-            onChange={(e) => setSmtpPass(e.target.value)}
-            placeholder="Contraseña de aplicación (16 caracteres)"
-            required
-            autoComplete="off"
-            className="w-full text-xs p-2.5 rounded-xl border border-neutral-200 font-mono"
-          />
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full py-2.5 rounded-xl bg-neutral-900 disabled:opacity-50 text-white font-bold text-xs"
-          >
-            Guardar Gmail para recuperación
-          </button>
-        </form>
+
+          {mailConfigured && !editMail && (
+            <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-3 space-y-2">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-emerald-900">Guardado y activo</p>
+                  <p className="text-[12px] text-emerald-800 break-all mt-0.5">
+                    {status.mailSmtpUser || 'Gmail configurado'}
+                  </p>
+                  <p className="text-[11px] text-emerald-700/90 mt-1 leading-relaxed">
+                    «Olvidé mi contraseña» ya puede enviar enlaces a Gmail, Hotmail, etc.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditMail(true);
+                  setSmtpUser(status.mailSmtpUser || smtpUser);
+                  setSmtpPass('');
+                }}
+                className="w-full py-2 rounded-xl border border-emerald-200 bg-white text-emerald-900 text-xs font-bold"
+              >
+                Cambiar Gmail / contraseña de aplicación
+              </button>
+            </div>
+          )}
+
+          {showMailForm && (
+            <form onSubmit={(e) => void onSaveMailSmtp(e)} className="space-y-2">
+              <p className="text-[10px] text-neutral-500 leading-relaxed">
+                1) En tu Google: Seguridad → Verificación en 2 pasos → Contraseñas de aplicaciones → crear una para
+                «Correo». 2) Pega aquí tu Gmail y esa contraseña de 16 caracteres (no la normal).
+              </p>
+              <input
+                type="email"
+                value={smtpUser}
+                onChange={(e) => setSmtpUser(e.target.value)}
+                placeholder={status.mailSmtpUser || 'tunombre@gmail.com'}
+                required
+                className={fieldInputClass}
+              />
+              <PasswordField
+                value={smtpPass}
+                onChange={setSmtpPass}
+                placeholder="Contraseña de aplicación (16 caracteres)"
+                required
+                autoComplete="off"
+              />
+              <div className="flex gap-2">
+                {editMail && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditMail(false);
+                      setSmtpPass('');
+                    }}
+                    className="flex-1 py-2.5 rounded-xl border border-neutral-200 text-neutral-700 font-bold text-xs"
+                  >
+                    Cancelar
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="flex-1 py-2.5 rounded-xl bg-neutral-900 disabled:opacity-50 text-white font-bold text-xs"
+                >
+                  Guardar Gmail para recuperación
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       )}
 
       {status?.backend && (
@@ -266,12 +328,15 @@ export const SuperAdminPanel: React.FC = () => {
             </ul>
           )}
 
-          <p className="text-[10px] text-neutral-500 pt-1">Usuarios · generar clave temporal si no llega el email</p>
+          <p className="text-[10px] text-neutral-500 pt-1 leading-relaxed">
+            Las contraseñas actuales no se pueden leer (van cifradas). Si alguien no puede entrar, genera una
+            temporal, cópiala y pásasela.
+          </p>
           <ul className="space-y-2">
             {users
               .filter((u) => u.status === 'approved' || u.status === 'rejected')
               .map((u) => (
-                <li key={u.id} className="rounded-xl border border-neutral-100 p-2 space-y-1">
+                <li key={u.id} className="rounded-xl border border-neutral-100 p-2 space-y-1.5">
                   <div className="flex items-center justify-between gap-2 text-[11px]">
                     <span className="truncate font-semibold text-neutral-800">
                       {u.name}
@@ -293,9 +358,29 @@ export const SuperAdminPanel: React.FC = () => {
                     </button>
                   )}
                   {tempPasswords[u.id] && (
-                    <p className="text-[11px] font-mono bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 break-all">
-                      {tempPasswords[u.id]}
-                    </p>
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold text-amber-900">Temporal (pásala al usuario)</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowTemp((t) => ({ ...t, [u.id]: !t[u.id] }))}
+                          className="p-1 rounded text-amber-800"
+                          aria-label={showTemp[u.id] ? 'Ocultar' : 'Ver'}
+                        >
+                          {showTemp[u.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                      <p className="text-[13px] font-mono break-all text-neutral-900">
+                        {showTemp[u.id] ? tempPasswords[u.id] : '••••••••••••'}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void navigator.clipboard?.writeText(tempPasswords[u.id])}
+                        className="text-[10px] font-bold text-emerald-800 underline"
+                      >
+                        Copiar
+                      </button>
+                    </div>
                   )}
                 </li>
               ))}
@@ -311,7 +396,7 @@ export const SuperAdminPanel: React.FC = () => {
         <select
           value={linkUserId}
           onChange={(e) => setLinkUserId(e.target.value)}
-          className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+          className={fieldInputClass}
         >
           <option value="">Quién comparte menú…</option>
           {localProfiles
@@ -325,7 +410,7 @@ export const SuperAdminPanel: React.FC = () => {
         <select
           value={linkTargetId}
           onChange={(e) => setLinkTargetId(e.target.value)}
-          className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+          className={fieldInputClass}
         >
           <option value="">Menú propio (sin vínculo)</option>
           {localProfiles
@@ -355,7 +440,17 @@ export const SuperAdminPanel: React.FC = () => {
         Restaurar menú hospitalario 1.500 kcal en todos
       </button>
 
-      {msg && <p className="text-[11px] text-neutral-700 leading-relaxed break-words">{msg}</p>}
+      {msg && (
+        <p
+          className={`text-[12px] font-semibold rounded-xl p-2.5 leading-relaxed break-words border ${
+            msgOk
+              ? 'text-emerald-900 bg-emerald-50 border-emerald-200'
+              : 'text-rose-900 bg-rose-50 border-rose-200'
+          }`}
+        >
+          {msg}
+        </p>
+      )}
     </div>
   );
 };
