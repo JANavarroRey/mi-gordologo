@@ -35,6 +35,9 @@ export type GordologoResponse = {
   hasUsers?: boolean;
   needsBootstrap?: boolean;
   hasGemini?: boolean;
+  hasMailSmtp?: boolean;
+  mailSmtpUser?: string | null;
+  tempPassword?: string;
   pending?: boolean;
   status?: string;
   token?: string;
@@ -208,6 +211,18 @@ export const backendService = {
 
   setGeminiKey(apiKey: string) {
     return this.call({ action: 'setGeminiKey', apiKey });
+  },
+
+  setMailSmtp(smtpUser: string, smtpPass: string, fromName?: string) {
+    return this.call({ action: 'setMailSmtp', smtpUser, smtpPass, fromName });
+  },
+
+  requestPasswordReset(email: string, redirectTo: string) {
+    return this.call({ action: 'requestPasswordReset', email, redirectTo });
+  },
+
+  adminResetPassword(userId: string) {
+    return this.call({ action: 'adminResetPassword', userId });
   },
 
   personalizeMenu(intake: unknown) {

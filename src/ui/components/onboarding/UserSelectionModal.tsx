@@ -201,7 +201,10 @@ export const UserSelectionModal: React.FC<Props> = ({
     setMsg(null);
     const res = await authSyncService.requestPasswordReset(email);
     if (res.ok) {
-      setMsg('Si el email existe, recibirás un enlace para restablecer la contraseña.');
+      setMsg(
+        ('message' in res && res.message) ||
+          'Si el email existe, recibirás un enlace para restablecer la contraseña. Revisa también spam.'
+      );
       setMode('login');
     } else {
       setMsg(res.error || 'No se pudo enviar el email.');
@@ -431,7 +434,8 @@ export const UserSelectionModal: React.FC<Props> = ({
         {mode === 'forgot' && (
           <form onSubmit={(e) => void handleForgot(e)} className="space-y-3">
             <p className="text-[11px] text-neutral-500 leading-relaxed">
-              Te enviaremos un enlace para elegir una contraseña nueva (requiere SMTP/Resend configurado).
+              Te enviaremos un enlace a tu Gmail, Hotmail, etc. Si falla, el administrador puede generarte una
+              contraseña temporal en Superadmin.
             </p>
             <div>
               <label className="flex items-center gap-1 text-[11px] font-bold text-neutral-700 mb-1">

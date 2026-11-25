@@ -199,6 +199,52 @@ async function ensureAdminRow(sb: ReturnType<typeof serviceClient>) {
   });
 }
 
+function randomTempPassword(len = 10): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = new Uint8Array(len);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+}
+
+async function loadMailSmtp(sb: ReturnType<typeof serviceClient>) {
+  const { data } = await sb
+    .from('app_admin')
+    .select('mail_smtp_user, mail_smtp_pass, mail_from_name')
+    .eq('id', 1)
+    .maybeSingle();
+  const user = String(data?.mail_smtp_user || '').trim();
+  const pass = String(data?.mail_smtp_pass || '').replace(/\s+/g, '');
+  const fromName = String(data?.mail_from_name || 'Mi Gordólogo').trim() || 'Mi Gordólogo';
+  if (!user || !pass) return null;
+  return { user, pass, fromName };
+}
+
+/** Envío gratis vía Gmail SMTP (App Password). Sirve para Gmail, Hotmail, etc. como destino. */
+async function sendMailViaGmail(opts: {
+  smtpUser: string;
+  smtpPass: string;
+  fromName: string;
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+}) {
+  const nodemailer = await import('npm:nodemailer@6.9.16');
+  const transporter = nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: { user: opts.smtpUser, pass: opts.smtpPass },
+  });
+  await transporter.sendMail({
+    from: `"${opts.fromName}" <${opts.smtpUser}>`,
+    to: opts.to,
+    subject: opts.subject,
+    html: opts.html,
+    text: opts.text,
+  });
+}
+
 async function countApproved(sb: ReturnType<typeof serviceClient>) {
   // Solo cuentan perfiles ya vinculados a Supabase Auth
   const { count } = await sb
@@ -309,6 +355,7 @@ Deno.serve(async (req) => {
       }
       const approved = await countApproved(sb);
       const users = await listUsers(sb);
+      const mail = await loadMailSmtp(sb);
       return json({
         ok: true,
         backend: true,
@@ -316,9 +363,72 @@ Deno.serve(async (req) => {
         hasUsers: (usersRes.count || 0) > 0,
         needsBootstrap: approved === 0,
         hasGemini: Boolean(admin?.gemini_api_key),
+        hasMailSmtp: Boolean(mail),
+        mailSmtpUser: mail?.user ? mail.user.replace(/(.{2}).+(@.+)/, '$1…$2') : null,
         users: users
           .filter((u) => u.status === 'approved')
           .map((u) => ({ id: u.id, name: u.name, role: u.role, status: u.status })),
+      });
+    }
+
+    // Recuperación de contraseña gratis: genera enlace Auth y lo manda por Gmail SMTP (App Password).
+    if (action === 'requestPasswordReset') {
+      const email = String(payload.email || '')
+        .trim()
+        .toLowerCase();
+      const redirectTo = String(payload.redirectTo || '').trim();
+      if (!email || !email.includes('@')) {
+        return json({ ok: false, error: 'Indica un email válido.' }, 400);
+      }
+      const mail = await loadMailSmtp(sb);
+      if (!mail) {
+        return json(
+          {
+            ok: false,
+            error:
+              'El correo de recuperación aún no está configurado. Pide al administrador que guarde un Gmail con “contraseña de aplicación” en Superadmin, o que te genere una contraseña temporal.',
+          },
+          503
+        );
+      }
+
+      const { data: linkData, error: linkErr } = await sb.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: redirectTo ? { redirectTo } : undefined,
+      });
+      if (linkErr || !linkData?.properties?.action_link) {
+        // No filtramos si el email existe o no (anti-enumeración), pero sí si SMTP falta
+        return json({
+          ok: true,
+          message: 'Si ese email está registrado, recibirás un enlace en unos minutos.',
+        });
+      }
+
+      const actionLink = linkData.properties.action_link;
+      try {
+        await sendMailViaGmail({
+          smtpUser: mail.user,
+          smtpPass: mail.pass,
+          fromName: mail.fromName,
+          to: email,
+          subject: 'Restablecer contraseña — Mi Gordólogo',
+          text: `Hola,\n\nPara elegir una contraseña nueva abre este enlace:\n${actionLink}\n\nSi no pediste esto, ignora el mensaje.\n`,
+          html: `<p>Hola,</p><p>Para elegir una contraseña nueva en <strong>Mi Gordólogo</strong>, pulsa el botón:</p><p><a href="${actionLink}" style="display:inline-block;padding:12px 18px;background:#047857;color:#fff;border-radius:12px;text-decoration:none;font-weight:700">Restablecer contraseña</a></p><p style="color:#666;font-size:12px">Si no pediste esto, ignora el mensaje.</p>`,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return json(
+          {
+            ok: false,
+            error: `No se pudo enviar el email (${message}). Revisa la contraseña de aplicación de Gmail en Superadmin.`,
+          },
+          500
+        );
+      }
+      return json({
+        ok: true,
+        message: 'Si ese email está registrado, recibirás un enlace en unos minutos.',
       });
     }
 
@@ -722,6 +832,71 @@ Deno.serve(async (req) => {
         .eq('id', 1);
       if (error) return json({ ok: false, error: error.message }, 500);
       return json({ ok: true, hasGemini: true });
+    }
+
+    // Gmail + contraseña de aplicación (gratis) para mandar recuperaciones a Gmail/Hotmail/etc.
+    if (action === 'setMailSmtp') {
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      if (ctx.auth.role !== 'superadmin') {
+        return json({ ok: false, error: 'Solo el administrador.' }, 401);
+      }
+      const smtpUser = String(payload.smtpUser || '')
+        .trim()
+        .toLowerCase();
+      const smtpPass = String(payload.smtpPass || '').replace(/\s+/g, '');
+      const fromName = String(payload.fromName || 'Mi Gordólogo').trim() || 'Mi Gordólogo';
+      if (!smtpUser.includes('@')) {
+        return json({ ok: false, error: 'Indica el Gmail que enviará los correos.' }, 400);
+      }
+      if (smtpPass.length < 8) {
+        return json(
+          {
+            ok: false,
+            error:
+              'Pega la “contraseña de aplicación” de Google (16 caracteres), no la contraseña normal de Gmail.',
+          },
+          400
+        );
+      }
+      await ensureAdminRow(sb);
+      const { error } = await sb
+        .from('app_admin')
+        .update({
+          mail_smtp_user: smtpUser,
+          mail_smtp_pass: smtpPass,
+          mail_from_name: fromName,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', 1);
+      if (error) return json({ ok: false, error: error.message }, 500);
+      return json({ ok: true, hasMailSmtp: true, mailSmtpUser: smtpUser });
+    }
+
+    if (action === 'adminResetPassword') {
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      if (ctx.auth.role !== 'superadmin') {
+        return json({ ok: false, error: 'Solo el administrador.' }, 401);
+      }
+      const targetId = String(payload.userId || '');
+      const { data: target } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
+      if (!target) return json({ ok: false, error: 'Perfil no encontrado.' }, 404);
+      const authUid = (target as UserRow).auth_user_id;
+      if (!authUid) {
+        return json({ ok: false, error: 'Ese perfil no tiene cuenta de email vinculada.' }, 400);
+      }
+      const tempPassword = randomTempPassword(12);
+      const { error } = await sb.auth.admin.updateUserById(authUid, { password: tempPassword });
+      if (error) return json({ ok: false, error: error.message }, 500);
+      return json({
+        ok: true,
+        tempPassword,
+        user: publicUser(target as UserRow),
+        message: 'Contraseña temporal generada. Compártela por un canal seguro y pide que la cambie en Perfil.',
+      });
     }
 
     if (action === 'ask' || action === 'adjustMeal') {

@@ -55,20 +55,17 @@ supabase functions deploy gordologo
      - `https://TU_USUARIO.github.io/TU_REPO/#/restablecer-clave`
      - también la raíz del sitio sin hash, por si Auth redirige ahí.
 
-### 3. SMTP gratuito (Resend) — obligatorio para emails reales
+### 3. Email de recuperación gratis (Gmail → Gmail/Hotmail/etc.)
 
-El SMTP **incluido** de Supabase solo manda a emails del equipo del proyecto (~2/hora). Para compartir la app:
+**No hace falta Resend ni comprar dominio.** La app envía el enlace de “olvidé mi contraseña” con el **Gmail del administrador** (SMTP + contraseña de aplicación de Google).
 
-1. Crea cuenta gratis en [Resend](https://resend.com) (capa free ~3.000 emails/mes).
-2. Verifica un dominio (o usa el dominio de prueba de Resend mientras pruebas).
-3. En Supabase → **Authentication → SMTP**:
-   - Host: `smtp.resend.com`
-   - Port: `465` (SSL) o el que indique Resend
-   - User: `resend`
-   - Password: API key de Resend
-   - Sender email: una dirección de tu dominio verificado
+1. En tu cuenta Google: **Seguridad** → activa **Verificación en 2 pasos** → **Contraseñas de aplicaciones** → crear una para «Correo» (16 caracteres).
+2. En la app, entra como admin → **Mi Perfil → Superadmin** → bloque **Email de recuperación**:
+   - tu Gmail
+   - la contraseña de aplicación
+3. Guarda. A partir de ahí, cualquiera (Gmail, Hotmail, Outlook…) puede usar “Olvidé mi contraseña”.
 
-Sin esto, el registro/recuperación fallará para emails que no sean del equipo de Supabase.
+Si el email falla, el admin puede pulsar **Generar contraseña temporal** junto al usuario y pasársela a mano.
 
 ### 4. Primera vez en la app
 

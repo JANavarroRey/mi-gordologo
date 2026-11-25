@@ -298,14 +298,13 @@ export const authSyncService = {
   },
 
   async requestPasswordReset(email: string) {
-    const sb = getSupabase();
-    if (!sb) return { ok: false as const, error: 'Servidor no configurado' };
     const { passwordResetRedirectUrl } = await import('./supabaseClient');
-    const { error } = await sb.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: passwordResetRedirectUrl(),
-    });
-    if (error) return { ok: false as const, error: error.message };
-    return { ok: true as const };
+    const res = await backendService.requestPasswordReset(email.trim(), passwordResetRedirectUrl());
+    if (!res.ok) return { ok: false as const, error: res.error || 'No se pudo enviar el email.' };
+    return {
+      ok: true as const,
+      message: res.message || 'Si ese email está registrado, recibirás un enlace en unos minutos.',
+    };
   },
 
   async updatePassword(newPassword: string) {
