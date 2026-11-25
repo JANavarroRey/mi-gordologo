@@ -1,5 +1,6 @@
 import { backendService } from './backendService';
 import { storageService } from './storageService';
+import { getAccessToken, getSupabase } from './supabaseClient';
 import type { BodyMeasurement, FoodIntake, UserProfile, WeekMenu } from '../models/types';
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -9,6 +10,8 @@ function toLocalProfile(u: {
   id: string;
   name: string;
   role?: string;
+  email?: string | null;
+  status?: string;
   age?: number;
   height?: number;
   targetCalories?: number;
@@ -33,6 +36,11 @@ function toLocalProfile(u: {
       u.id === 'pepe' ? null : linkedFromSettings ?? existing?.linkedMenuUserId ?? null,
     createdAt: u.createdAt || new Date().toISOString(),
     role: u.role === 'superadmin' ? 'superadmin' : 'member',
+    email: u.email ?? existing?.email ?? null,
+    status:
+      u.status === 'approved' || u.status === 'rejected' || u.status === 'pending'
+        ? u.status
+        : existing?.status ?? 'pending',
     gender: u.gender === 'male' || u.gender === 'female' ? u.gender : null,
     activityLevel:
       u.activityLevel === 'sedentary' || u.activityLevel === 'moderate' || u.activityLevel === 'active'
@@ -53,13 +61,29 @@ function applySettings(userId: string, settings: Record<string, unknown> | undef
 
 export const authSyncService = {
   applyLogin(res: {
-    token?: string;
-    authUser?: { id: string; name: string; role?: string };
+    authUser?: {
+      id: string;
+      name: string;
+      role?: string;
+      status?: string;
+      email?: string | null;
+    };
     actingUserId?: string;
-    users?: Array<{ id: string; name: string; role?: string; age?: number; height?: number; targetCalories?: number; createdAt?: string }>;
+    users?: Array<{
+      id: string;
+      name: string;
+      role?: string;
+      status?: string;
+      email?: string | null;
+      age?: number;
+      height?: number;
+      targetCalories?: number;
+      createdAt?: string;
+    }>;
   }) {
-    if (res.token) backendService.setUserToken(res.token);
     if (res.authUser?.id) backendService.setAuthUserId(res.authUser.id);
+    if (res.authUser?.status) backendService.setAuthStatus(res.authUser.status);
+    if (res.authUser?.role) backendService.setAuthRole(res.authUser.role);
     if (res.users?.length) {
       storageService.replaceProfiles(res.users.map(toLocalProfile));
     } else if (res.authUser) {
@@ -67,22 +91,65 @@ export const authSyncService = {
     }
     const acting = res.actingUserId || res.authUser?.id;
     if (acting) storageService.setActiveUserId(acting);
-    storageService.setHasCompletedOnboarding(true);
+    if (res.authUser?.status === 'approved') {
+      storageService.setHasCompletedOnboarding(true);
+    }
     window.dispatchEvent(new Event('storage'));
   },
 
+  async syncAfterAuth(): Promise<{ ok: boolean; status?: string; error?: string }> {
+    const token = await getAccessToken();
+    if (!token) return { ok: false, error: 'Sin sesión' };
+
+    const state = await backendService.getState();
+    if (!state.ok && !state.authUser) {
+      return { ok: false, error: state.error || 'No se pudo cargar el perfil' };
+    }
+
+    const status = state.status || state.authUser?.status || 'pending';
+    backendService.setAuthStatus(status);
+
+    if (state.authUser?.id) backendService.setAuthUserId(state.authUser.id);
+
+    if (state.authUser?.role) backendService.setAuthRole(state.authUser.role);
+
+    if (status !== 'approved') {
+      if (state.authUser) storageService.upsertProfile(toLocalProfile(state.authUser));
+      window.dispatchEvent(new Event('storage'));
+      return { ok: true, status };
+    }
+
+    this.applyLogin({
+      authUser: state.authUser,
+      actingUserId: state.actingUser?.id,
+      users: state.users,
+    });
+    await this.hydrateFromServer();
+    return { ok: true, status: 'approved' };
+  },
+
   async hydrateFromServer(): Promise<boolean> {
-    if (!backendService.getUserToken()) return false;
+    const token = await getAccessToken();
+    if (!token) return false;
     hydrating = true;
     try {
       const state = await backendService.getState();
-      if (!state.ok) {
-        if (state.error && /sesión|inicia/i.test(state.error)) {
-          backendService.setUserToken(null);
+      if (!state.ok && !state.authUser) {
+        if (state.error && /sesión|inicia/i.test(state.error || '')) {
           backendService.setAuthUserId(null);
+          backendService.setAuthStatus(null);
         }
         return false;
       }
+
+      const status = state.status || state.authUser?.status || '';
+      backendService.setAuthStatus(status);
+
+      if (status && status !== 'approved') {
+        if (state.authUser) storageService.upsertProfile(toLocalProfile(state.authUser));
+        return true;
+      }
+
       if (state.authUser?.id) backendService.setAuthUserId(state.authUser.id);
       if (state.users?.length) {
         storageService.replaceProfiles(state.users.map(toLocalProfile));
@@ -104,6 +171,7 @@ export const authSyncService = {
       if (Array.isArray(state.measurements)) {
         storageService.replaceMeasurements(state.measurements as BodyMeasurement[], uid);
       }
+      storageService.setHasCompletedOnboarding(true);
       window.dispatchEvent(new Event('storage'));
       return true;
     } finally {
@@ -138,15 +206,19 @@ export const authSyncService = {
   },
 
   schedulePush() {
-    if (hydrating || !backendService.getUserToken()) return;
-    if (pushTimer) clearTimeout(pushTimer);
-    pushTimer = setTimeout(() => {
-      void this.flushNow();
-    }, 800);
+    if (hydrating) return;
+    void getAccessToken().then((token) => {
+      if (!token || backendService.getAuthStatus() !== 'approved') return;
+      if (pushTimer) clearTimeout(pushTimer);
+      pushTimer = setTimeout(() => {
+        void this.flushNow();
+      }, 800);
+    });
   },
 
   async flushNow() {
-    if (!backendService.getUserToken()) return;
+    const token = await getAccessToken();
+    if (!token || backendService.getAuthStatus() !== 'approved') return;
     const uid = storageService.getActiveUserId();
     const menus = storageService.getMenus(uid);
     const measurements = storageService.getMeasurements(uid);
@@ -172,10 +244,10 @@ export const authSyncService = {
     });
   },
 
-  /** Regenera menús 1.500 kcal en todos los perfiles y los sube al servidor. */
   async resetAllMenusToHospitalSeed(): Promise<void> {
     const ids = storageService.forceHospitalSeedOnAllProfiles();
-    if (!backendService.getUserToken()) return;
+    const token = await getAccessToken();
+    if (!token) return;
     for (const id of ids) {
       const weeks = storageService.getMenus(id);
       await backendService.saveMenus(weeks, id, false);
@@ -196,5 +268,51 @@ export const authSyncService = {
       }
     }
     window.dispatchEvent(new Event('storage'));
+  },
+
+  async signInWithPassword(email: string, password: string) {
+    const sb = getSupabase();
+    if (!sb) return { ok: false as const, error: 'Servidor no configurado' };
+    const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) return { ok: false as const, error: error.message };
+    return this.syncAfterAuth();
+  },
+
+  async signUp(email: string, password: string, name: string) {
+    const sb = getSupabase();
+    if (!sb) return { ok: false as const, error: 'Servidor no configurado' };
+    const { data, error } = await sb.auth.signUp({
+      email: email.trim(),
+      password,
+      options: { data: { name: name.trim() } },
+    });
+    if (error) return { ok: false as const, error: error.message };
+    if (!data.session) {
+      return {
+        ok: true as const,
+        status: 'confirm_email' as const,
+        message: 'Revisa tu email para confirmar la cuenta. Luego podrás entrar; un admin te aprobará.',
+      };
+    }
+    return this.syncAfterAuth();
+  },
+
+  async requestPasswordReset(email: string) {
+    const sb = getSupabase();
+    if (!sb) return { ok: false as const, error: 'Servidor no configurado' };
+    const { passwordResetRedirectUrl } = await import('./supabaseClient');
+    const { error } = await sb.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: passwordResetRedirectUrl(),
+    });
+    if (error) return { ok: false as const, error: error.message };
+    return { ok: true as const };
+  },
+
+  async updatePassword(newPassword: string) {
+    const sb = getSupabase();
+    if (!sb) return { ok: false as const, error: 'Servidor no configurado' };
+    const { error } = await sb.auth.updateUser({ password: newPassword });
+    if (error) return { ok: false as const, error: error.message };
+    return { ok: true as const };
   },
 };

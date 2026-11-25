@@ -16,9 +16,8 @@ import { personalizeFromIntake } from '@/domain/services/menuPersonalizeService'
 
 export function AppLayout() {
   const [activeUser, setActiveUser] = useState<UserProfile>(() => storageService.getActiveProfile());
-  const [showUserModal, setShowUserModal] = useState(
-    () => !backendService.isLoggedIn() || !storageService.hasCompletedOnboarding()
-  );
+  const [showUserModal, setShowUserModal] = useState(true);
+  const [sessionReady, setSessionReady] = useState(false);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [showHabits, setShowHabits] = useState(false);
@@ -31,7 +30,7 @@ export function AppLayout() {
       const next = storageService.getActiveProfile();
       setActiveUser(next);
       if (
-        backendService.isLoggedIn() &&
+        backendService.isApproved() &&
         storageService.needsHabitsQuiz(next.id) &&
         skippedQuizFor.current !== next.id
       ) {
@@ -41,12 +40,14 @@ export function AppLayout() {
       }
     };
     window.addEventListener('storage', handleStorageChange);
-    if (backendService.isLoggedIn()) {
-      void authSyncService.hydrateFromServer().then(async () => {
+
+    void authSyncService.syncAfterAuth().then(async (res) => {
+      setSessionReady(true);
+      if (res.ok && res.status === 'approved') {
+        setShowUserModal(false);
         if (storageService.needsHospitalSeedReset()) {
           await authSyncService.resetAllMenusToHospitalSeed();
         } else {
-          // Asegura menús locales generados con la versión actual (getMenus aplica el seed).
           for (const p of storageService.getProfiles()) {
             storageService.getMenus(p.id);
           }
@@ -54,15 +55,11 @@ export function AppLayout() {
         const next = storageService.getActiveProfile();
         setActiveUser(next);
         setShowHabits(storageService.needsHabitsQuiz(next.id) && skippedQuizFor.current !== next.id);
-      });
-    } else {
-      if (storageService.needsHospitalSeedReset()) {
-        storageService.forceHospitalSeedOnAllProfiles();
+      } else {
+        setShowUserModal(true);
       }
-      if (storageService.needsHabitsQuiz()) {
-        setShowHabits(true);
-      }
-    }
+    });
+
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
@@ -166,10 +163,10 @@ export function AppLayout() {
       </nav>
 
       <UserSelectionModal
-        isOpen={showUserModal}
-        canDismiss={backendService.isLoggedIn() && storageService.hasCompletedOnboarding()}
+        isOpen={showUserModal || !sessionReady || !backendService.isApproved()}
+        canDismiss={backendService.isApproved() && storageService.hasCompletedOnboarding()}
         onClose={() => {
-          if (backendService.isLoggedIn()) setShowUserModal(false);
+          if (backendService.isApproved()) setShowUserModal(false);
         }}
         onSelectUser={(u) => {
           setActiveUser(u);

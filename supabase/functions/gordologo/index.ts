@@ -7,8 +7,6 @@ const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const SESSION_DAYS = 30;
-
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -25,33 +23,6 @@ function serviceClient() {
   });
 }
 
-function b64(bytes: Uint8Array): string {
-  let s = '';
-  bytes.forEach((b) => {
-    s += String.fromCharCode(b);
-  });
-  return btoa(s);
-}
-
-function fromB64(s: string): Uint8Array {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-async function hashPassword(password: string, salt: Uint8Array): Promise<string> {
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, [
-    'deriveBits',
-  ]);
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations: 120_000, hash: 'SHA-256' },
-    key,
-    256
-  );
-  return b64(new Uint8Array(bits));
-}
-
 function normalizeGeminiKey(raw: string): string {
   return String(raw || '')
     .trim()
@@ -64,23 +35,13 @@ function isLikelyGeminiKey(apiKey: string): boolean {
   return apiKey.startsWith('AIza') || apiKey.startsWith('AQ.');
 }
 
-function randomToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return b64(bytes).replace(/[+/=]/g, (c) => (c === '+' ? '-' : c === '/' ? '_' : ''));
-}
-
-async function makePassword(password: string) {
-  const salt = new Uint8Array(16);
-  crypto.getRandomValues(salt);
-  const password_hash = await hashPassword(password, salt);
-  return { password_salt: b64(salt), password_hash };
-}
-
 type UserRow = {
   id: string;
   name: string;
   role: string;
+  email: string | null;
+  auth_user_id: string | null;
+  status: string;
   age: number;
   height: number;
   target_calories: number;
@@ -91,14 +52,15 @@ type UserRow = {
   created_at: string;
 };
 
-function publicUser(row: UserRow, withRecovery = false) {
+function publicUser(row: UserRow) {
   const rawSettings = { ...(row.settings || {}) };
-  const recovery = typeof rawSettings.passwordRecovery === 'string' ? String(rawSettings.passwordRecovery) : '';
   delete rawSettings.passwordRecovery;
   return {
     id: row.id,
     name: row.name,
     role: row.role,
+    email: row.email,
+    status: row.status || 'pending',
     age: row.age,
     height: row.height,
     targetCalories: row.target_calories,
@@ -108,7 +70,6 @@ function publicUser(row: UserRow, withRecovery = false) {
     linkedMenuUserId: null,
     createdAt: row.created_at,
     settings: rawSettings,
-    passwordRecovery: withRecovery && recovery ? recovery : undefined,
   };
 }
 
@@ -216,66 +177,99 @@ async function callGemini(
   throw new Error('IA_SATURADA');
 }
 
-async function requireAdminLegacy(sb: ReturnType<typeof serviceClient>, token: string | null) {
-  if (!token) return false;
-  const { data } = await sb.from('admin_sessions').select('token, expires_at').eq('token', token).maybeSingle();
-  if (!data) return false;
-  if (new Date(data.expires_at).getTime() < Date.now()) {
-    await sb.from('admin_sessions').delete().eq('token', token);
-    return false;
-  }
-  return true;
+function extractBearer(req: Request): string | null {
+  const h = req.headers.get('Authorization') || '';
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  return m ? m[1].trim() : null;
 }
 
-async function loadSession(sb: ReturnType<typeof serviceClient>, token: string | null) {
-  if (!token) return null;
-  const { data: sess } = await sb
-    .from('user_sessions')
-    .select('token, user_id, acting_user_id, expires_at')
-    .eq('token', token)
-    .maybeSingle();
-  if (!sess) return null;
-  if (new Date(sess.expires_at).getTime() < Date.now()) {
-    await sb.from('user_sessions').delete().eq('token', token);
-    return null;
-  }
-  const { data: auth } = await sb.from('app_users').select('*').eq('id', sess.user_id).maybeSingle();
-  const { data: acting } = await sb.from('app_users').select('*').eq('id', sess.acting_user_id).maybeSingle();
-  if (!auth || !acting) return null;
-  return { sess, auth: auth as UserRow, acting: acting as UserRow };
-}
-
-async function issueSession(
-  sb: ReturnType<typeof serviceClient>,
-  userId: string,
-  actingUserId: string
-) {
-  const token = randomToken();
-  const expires = new Date(Date.now() + SESSION_DAYS * 86400_000).toISOString();
-  await sb.from('user_sessions').insert({
-    token,
-    user_id: userId,
-    acting_user_id: actingUserId,
-    expires_at: expires,
-  });
-  return token;
-}
-
-async function listUsers(sb: ReturnType<typeof serviceClient>, withRecovery = false) {
+async function listUsers(sb: ReturnType<typeof serviceClient>) {
   const { data } = await sb.from('app_users').select('*').order('created_at');
-  return (data || []).map((row) => publicUser(row as UserRow, withRecovery));
+  return (data || []).map((row) => publicUser(row as UserRow));
 }
 
 async function ensureAdminRow(sb: ReturnType<typeof serviceClient>) {
   const { data } = await sb.from('app_admin').select('id').eq('id', 1).maybeSingle();
   if (data) return;
-  const dummy = await makePassword(randomToken());
   await sb.from('app_admin').insert({
     id: 1,
-    password_salt: dummy.password_salt,
-    password_hash: dummy.password_hash,
+    password_salt: 'legacy',
+    password_hash: 'legacy',
     gemini_api_key: null,
   });
+}
+
+async function countApproved(sb: ReturnType<typeof serviceClient>) {
+  // Solo cuentan perfiles ya vinculados a Supabase Auth
+  const { count } = await sb
+    .from('app_users')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'approved')
+    .not('auth_user_id', 'is', null);
+  return count || 0;
+}
+
+async function loadContext(sb: ReturnType<typeof serviceClient>, jwt: string | null) {
+  if (!jwt) return null;
+  const { data: authData, error } = await sb.auth.getUser(jwt);
+  if (error || !authData?.user) return null;
+  const authUid = authData.user.id;
+
+  let { data: authProfile } = await sb
+    .from('app_users')
+    .select('*')
+    .eq('auth_user_id', authUid)
+    .maybeSingle();
+
+  // Perfil creado por trigger puede tardar un instante
+  if (!authProfile) {
+    await new Promise((r) => setTimeout(r, 400));
+    const retry = await sb.from('app_users').select('*').eq('auth_user_id', authUid).maybeSingle();
+    authProfile = retry.data;
+  }
+
+  if (!authProfile) return null;
+
+  let acting = authProfile as UserRow;
+  if (authProfile.role === 'superadmin' && authProfile.status === 'approved') {
+    const { data: actingRow } = await sb
+      .from('app_acting')
+      .select('acting_user_id')
+      .eq('auth_user_id', authUid)
+      .maybeSingle();
+    if (actingRow?.acting_user_id) {
+      const { data: target } = await sb
+        .from('app_users')
+        .select('*')
+        .eq('id', actingRow.acting_user_id)
+        .maybeSingle();
+      if (target) acting = target as UserRow;
+    }
+  }
+
+  return {
+    authUid,
+    auth: authProfile as UserRow,
+    acting,
+  };
+}
+
+function requireApproved(ctx: { auth: UserRow }) {
+  if (ctx.auth.status !== 'approved') {
+    return json(
+      {
+        ok: false,
+        error:
+          ctx.auth.status === 'rejected'
+            ? 'Tu cuenta fue rechazada. Contacta con el administrador.'
+            : 'Tu cuenta está pendiente de aprobación.',
+        authUser: publicUser(ctx.auth),
+        status: ctx.auth.status,
+      },
+      403
+    );
+  }
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -294,8 +288,7 @@ Deno.serve(async (req) => {
   }
 
   const action = String(payload.action || '');
-  const adminToken = req.headers.get('x-admin-token');
-  const userToken = req.headers.get('x-user-token');
+  const jwt = extractBearer(req);
   const sb = serviceClient();
 
   try {
@@ -308,169 +301,216 @@ Deno.serve(async (req) => {
           backend: true,
           hasAdmin: Boolean(admin),
           hasUsers: false,
+          needsBootstrap: true,
           hasGemini: Boolean(admin?.gemini_api_key),
           users: [],
           error: usersRes.error.message,
         });
       }
+      const approved = await countApproved(sb);
       const users = await listUsers(sb);
       return json({
         ok: true,
         backend: true,
-        hasAdmin: Boolean(admin) || (usersRes.count || 0) > 0,
+        hasAdmin: Boolean(admin) || approved > 0,
         hasUsers: (usersRes.count || 0) > 0,
+        needsBootstrap: approved === 0,
         hasGemini: Boolean(admin?.gemini_api_key),
-        users: users.map((u) => ({ id: u.id, name: u.name, role: u.role })),
+        users: users
+          .filter((u) => u.status === 'approved')
+          .map((u) => ({ id: u.id, name: u.name, role: u.role, status: u.status })),
       });
     }
 
-    if (action === 'bootstrapUsers') {
-      const pepePassword = String(payload.pepePassword || '');
-      const mariaPassword = String(payload.mariaPassword || '');
-      if (pepePassword.length < 8) {
-        return json({ ok: false, error: 'La contraseña de Pepe debe tener al menos 8 caracteres.' }, 400);
+    // Primer administrador (solo si no hay nadie aprobado)
+    if (action === 'bootstrapAdmin') {
+      const email = String(payload.email || '')
+        .trim()
+        .toLowerCase();
+      const password = String(payload.password || '');
+      const name = String(payload.name || 'Admin').trim() || 'Admin';
+      if (!email || !email.includes('@')) {
+        return json({ ok: false, error: 'Indica un email válido.' }, 400);
       }
-      if (mariaPassword.length < 6) {
-        return json({ ok: false, error: 'La contraseña de María debe tener al menos 6 caracteres.' }, 400);
+      if (password.length < 8) {
+        return json({ ok: false, error: 'La contraseña debe tener al menos 8 caracteres.' }, 400);
       }
-      const { count } = await sb.from('app_users').select('id', { count: 'exact', head: true });
-      if ((count || 0) > 0) {
-        return json({ ok: false, error: 'Las cuentas ya están creadas. Entra con tu contraseña.' }, 409);
+      if ((await countApproved(sb)) > 0) {
+        return json({ ok: false, error: 'Ya hay un administrador. Regístrate y espera aprobación.' }, 409);
       }
-      await ensureAdminRow(sb);
-      const pepePw = await makePassword(pepePassword);
-      const mariaPw = await makePassword(mariaPassword);
-      const now = new Date().toISOString();
-      const { error: pepeErr } = await sb.from('app_users').insert({
-        id: 'pepe',
-        name: 'Pepe',
-        role: 'superadmin',
-        ...pepePw,
-        age: 0,
-        height: 0,
-        target_calories: 1500,
-        settings: { servings: 1, freeDay: 5, freeDayEnabled: false, weighInDay: 4, passwordRecovery: pepePassword },
-        created_at: now,
-      });
-      if (pepeErr) return json({ ok: false, error: pepeErr.message }, 500);
-      const { error: mariaErr } = await sb.from('app_users').insert({
-        id: 'maria_ignacia',
-        name: 'María Ignacia',
-        role: 'member',
-        ...mariaPw,
-        age: 68,
-        height: 167,
-        target_calories: 1500,
-        gender: 'female',
-        activity_level: 'sedentary',
-        goal: 'lose_weight',
-        settings: { servings: 2, freeDay: 5, freeDayEnabled: false, weighInDay: 4, passwordRecovery: mariaPassword },
-        created_at: '2026-09-10T10:00:00Z',
-      });
-      if (mariaErr) return json({ ok: false, error: mariaErr.message }, 500);
 
+      await ensureAdminRow(sb);
+
+      const { data: created, error: createErr } = await sb.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name },
+      });
+      if (createErr || !created.user) {
+        return json({ ok: false, error: createErr?.message || 'No se pudo crear el usuario Auth.' }, 500);
+      }
+
+      const authUid = created.user.id;
+      // El trigger puede haber creado usr_… pending; lo convertimos en pepe superadmin aprobado
+      await sb.from('app_users').delete().eq('auth_user_id', authUid);
+
+      const now = new Date().toISOString();
+      const pepeId = 'pepe';
+      const { data: existingPepe } = await sb.from('app_users').select('id').eq('id', pepeId).maybeSingle();
+      if (existingPepe) {
+        const { error } = await sb
+          .from('app_users')
+          .update({
+            name,
+            role: 'superadmin',
+            email,
+            auth_user_id: authUid,
+            status: 'approved',
+            updated_at: now,
+          })
+          .eq('id', pepeId);
+        if (error) return json({ ok: false, error: error.message }, 500);
+      } else {
+        const { error } = await sb.from('app_users').insert({
+          id: pepeId,
+          name,
+          role: 'superadmin',
+          email,
+          auth_user_id: authUid,
+          status: 'approved',
+          age: 0,
+          height: 0,
+          target_calories: 1500,
+          settings: { servings: 1, freeDay: 5, freeDayEnabled: false, weighInDay: 4 },
+          created_at: now,
+          updated_at: now,
+        });
+        if (error) return json({ ok: false, error: error.message }, 500);
+      }
+
+      // Opcional: semilla María sin Auth (solo datos locales migrados)
       const menusByUser = (payload.menusByUser || {}) as Record<string, unknown>;
       const measurementsByUser = (payload.measurementsByUser || {}) as Record<string, unknown>;
       const meta = (payload.meta || {}) as Record<string, string>;
-      for (const uid of ['pepe', 'maria_ignacia']) {
-        if (menusByUser[uid]) {
-          await sb.from('user_menus').upsert({
-            user_id: uid,
-            weeks: menusByUser[uid],
-            edited: meta[`menus_edited_${uid}`] === '1',
-            updated_at: now,
-          });
-        }
-        if (measurementsByUser[uid]) {
-          await sb.from('user_measurements').upsert({
-            user_id: uid,
-            payload: measurementsByUser[uid],
-            updated_at: now,
-          });
-        }
+      for (const uid of Object.keys(menusByUser)) {
+        await sb.from('user_menus').upsert({
+          user_id: uid,
+          weeks: menusByUser[uid],
+          edited: meta[`menus_edited_${uid}`] === '1',
+          updated_at: now,
+        });
+      }
+      for (const uid of Object.keys(measurementsByUser)) {
+        await sb.from('user_measurements').upsert({
+          user_id: uid,
+          payload: measurementsByUser[uid],
+          updated_at: now,
+        });
       }
 
-      const token = await issueSession(sb, 'pepe', 'pepe');
       const { data: admin } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
+      const { data: pepe } = await sb.from('app_users').select('*').eq('id', pepeId).maybeSingle();
       return json({
         ok: true,
-        token,
+        message: 'Administrador creado. Entra con tu email y contraseña.',
         hasGemini: Boolean(admin?.gemini_api_key),
-        authUser: { id: 'pepe', name: 'Pepe', role: 'superadmin' },
-        actingUserId: 'pepe',
-        users: await listUsers(sb, true),
-      });
-    }
-
-    if (action === 'login') {
-      const userId = String(payload.userId || '');
-      const password = String(payload.password || '');
-      if (!userId) {
-        return json({ ok: false, error: 'Elige un perfil.' }, 400);
-      }
-      const { data } = await sb.from('app_users').select('*').eq('id', userId).maybeSingle();
-      if (!data) {
-        return json({ ok: false, error: 'Ese perfil no existe.' }, 404);
-      }
-      const hash = await hashPassword(password, fromB64(data.password_salt));
-      if (hash !== data.password_hash) {
-        return json({ ok: false, error: 'Contraseña incorrecta.' }, 401);
-      }
-      const token = await issueSession(sb, data.id, data.id);
-      const remembered = { ...((data.settings as Record<string, unknown>) || {}), passwordRecovery: password };
-      await sb.from('app_users').update({ settings: remembered }).eq('id', data.id);
-      const { data: admin } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
-      const isAdmin = data.role === 'superadmin';
-      return json({
-        ok: true,
-        token,
-        hasGemini: Boolean(admin?.gemini_api_key),
-        authUser: publicUser({ ...(data as UserRow), settings: remembered }, isAdmin),
-        actingUserId: data.id,
-        users: isAdmin ? await listUsers(sb, true) : [publicUser({ ...(data as UserRow), settings: remembered })],
+        authUser: pepe ? publicUser(pepe as UserRow) : null,
+        needsSignIn: true,
       });
     }
 
     if (action === 'logout') {
-      if (userToken) await sb.from('user_sessions').delete().eq('token', userToken);
-      if (adminToken) await sb.from('admin_sessions').delete().eq('token', adminToken);
+      const ctx = await loadContext(sb, jwt);
+      if (ctx) {
+        await sb.from('app_acting').delete().eq('auth_user_id', ctx.authUid);
+      }
       return json({ ok: true });
     }
 
-    const session = await loadSession(sb, userToken);
+    const ctx = await loadContext(sb, jwt);
+
+    if (action === 'getMyProfile') {
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      return json({
+        ok: true,
+        authUser: publicUser(ctx.auth),
+        actingUser: publicUser(ctx.acting),
+        status: ctx.auth.status,
+      });
+    }
 
     if (action === 'openAsUser') {
-      if (!session || session.auth.role !== 'superadmin') {
-        return json({ ok: false, error: 'Solo Pepe puede abrir otros perfiles.' }, 401);
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      if (ctx.auth.role !== 'superadmin') {
+        return json({ ok: false, error: 'Solo el administrador puede abrir otros perfiles.' }, 401);
       }
       const targetUserId = String(payload.targetUserId || '');
       const { data: target } = await sb.from('app_users').select('*').eq('id', targetUserId).maybeSingle();
       if (!target) return json({ ok: false, error: 'Perfil no encontrado.' }, 404);
-      await sb.from('user_sessions').update({ acting_user_id: target.id }).eq('token', session.sess.token);
+      if ((target as UserRow).status !== 'approved') {
+        return json({ ok: false, error: 'Ese perfil aún no está aprobado.' }, 400);
+      }
+      await sb.from('app_acting').upsert({
+        auth_user_id: ctx.authUid,
+        acting_user_id: target.id,
+        updated_at: new Date().toISOString(),
+      });
       return json({
         ok: true,
         actingUserId: target.id,
         actingUser: publicUser(target as UserRow),
-        authUser: publicUser(session.auth),
+        authUser: publicUser(ctx.auth),
       });
     }
 
     if (action === 'createUser') {
-      if (!session || session.auth.role !== 'superadmin') {
-        return json({ ok: false, error: 'Solo Pepe puede crear perfiles.' }, 401);
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      if (ctx.auth.role !== 'superadmin') {
+        return json({ ok: false, error: 'Solo el administrador puede crear perfiles.' }, 401);
       }
       const name = String(payload.name || '').trim();
+      const email = String(payload.email || '')
+        .trim()
+        .toLowerCase();
       const password = String(payload.password || '');
       if (!name) return json({ ok: false, error: 'Falta el nombre.' }, 400);
+      if (!email || !email.includes('@')) return json({ ok: false, error: 'Falta un email válido.' }, 400);
       if (password.length < 6) return json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' }, 400);
-      const id = String(payload.id || `usr_${Date.now()}`);
-      const pw = await makePassword(password);
+
+      const { data: created, error: createErr } = await sb.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name },
+      });
+      if (createErr || !created.user) {
+        return json({ ok: false, error: createErr?.message || 'No se pudo crear la cuenta.' }, 500);
+      }
+
+      const authUid = created.user.id;
+      await new Promise((r) => setTimeout(r, 400));
+      let { data: row } = await sb.from('app_users').select('*').eq('auth_user_id', authUid).maybeSingle();
       const now = new Date().toISOString();
-      const row = {
-        id,
+      const preferredId = String(payload.id || '').trim();
+
+      // Si el wizard pide un id concreto distinto al del trigger, reasignamos la fila
+      if (row && preferredId && preferredId !== row.id) {
+        await sb.from('app_users').delete().eq('id', row.id);
+        row = null;
+      }
+
+      const userId = preferredId || row?.id || `usr_${authUid.replace(/-/g, '')}`;
+      const fields = {
         name,
-        role: 'member',
-        ...pw,
+        role: 'member' as const,
+        email,
+        auth_user_id: authUid,
+        status: 'approved',
         age: Number(payload.age) || 40,
         height: Number(payload.height) || 170,
         target_calories: Number(payload.targetCalories) || 1500,
@@ -482,59 +522,92 @@ Deno.serve(async (req) => {
           freeDay: 5,
           freeDayEnabled: false,
           weighInDay: Number(payload.weighInDay) || 4,
-          passwordRecovery: password,
         },
-        created_at: now,
+        updated_at: now,
       };
-      const { error } = await sb.from('app_users').insert(row);
-      if (error) return json({ ok: false, error: error.message }, 500);
+
+      if (row) {
+        const { error } = await sb.from('app_users').update(fields).eq('id', row.id);
+        if (error) return json({ ok: false, error: error.message }, 500);
+      } else {
+        const { error } = await sb.from('app_users').insert({ id: userId, ...fields, created_at: now });
+        if (error) return json({ ok: false, error: error.message }, 500);
+      }
+
+      const finalId = row?.id || userId;
+
       if (payload.weeks) {
-        await sb.from('user_menus').insert({
-          user_id: id,
+        await sb.from('user_menus').upsert({
+          user_id: finalId,
           weeks: payload.weeks,
           edited: false,
           updated_at: now,
         });
       }
       if (payload.measurements) {
-        await sb.from('user_measurements').insert({
-          user_id: id,
+        await sb.from('user_measurements').upsert({
+          user_id: finalId,
           payload: payload.measurements,
           updated_at: now,
         });
       }
-      return json({ ok: true, user: publicUser(row as UserRow) });
+
+      const { data: saved } = await sb.from('app_users').select('*').eq('id', finalId).maybeSingle();
+      return json({ ok: true, user: saved ? publicUser(saved as UserRow) : null });
     }
 
-    if (action === 'setUserPassword') {
-      if (!session) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const targetId = String(payload.userId || session.auth.id);
-      const password = String(payload.password || '');
-      const minLen = targetId === 'pepe' ? 8 : 6;
-      if (password.length < minLen) {
-        return json({ ok: false, error: `La contraseña debe tener al menos ${minLen} caracteres.` }, 400);
+    if (action === 'setUserStatus') {
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      if (ctx.auth.role !== 'superadmin') {
+        return json({ ok: false, error: 'Solo el administrador puede aprobar cuentas.' }, 401);
       }
-      if (session.auth.role !== 'superadmin' && targetId !== session.auth.id) {
-        return json({ ok: false, error: 'No puedes cambiar la clave de otra persona.' }, 403);
+      const targetId = String(payload.userId || '');
+      const status = String(payload.status || '');
+      if (!['approved', 'rejected', 'pending'].includes(status)) {
+        return json({ ok: false, error: 'Estado no válido.' }, 400);
       }
-      const pw = await makePassword(password);
-      const { data: target } = await sb.from('app_users').select('settings').eq('id', targetId).maybeSingle();
-      const settings = { ...((target?.settings as Record<string, unknown>) || {}), passwordRecovery: password };
+      if (targetId === ctx.auth.id && status !== 'approved') {
+        return json({ ok: false, error: 'No puedes desaprobarte a ti mismo.' }, 400);
+      }
       const { error } = await sb
         .from('app_users')
-        .update({ ...pw, settings, updated_at: new Date().toISOString() })
+        .update({ status, updated_at: new Date().toISOString() })
         .eq('id', targetId);
       if (error) return json({ ok: false, error: error.message }, 500);
-      return json({ ok: true });
+      const { data } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
+      return json({ ok: true, user: data ? publicUser(data as UserRow) : null });
+    }
+
+    if (action === 'listPendingUsers') {
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      if (ctx.auth.role !== 'superadmin') {
+        return json({ ok: false, error: 'Solo el administrador.' }, 401);
+      }
+      const { data } = await sb
+        .from('app_users')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+      return json({
+        ok: true,
+        users: (data || []).map((row) => publicUser(row as UserRow)),
+      });
     }
 
     if (action === 'updateProfile') {
-      if (!session) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const targetId = String(payload.userId || session.acting.id);
-      if (session.auth.role !== 'superadmin' && targetId !== session.auth.id) {
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      const targetId = String(payload.userId || ctx.acting.id);
+      if (ctx.auth.role !== 'superadmin' && targetId !== ctx.auth.id) {
         return json({ ok: false, error: 'No puedes editar otro perfil.' }, 403);
       }
       const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (payload.name != null) patch.name = String(payload.name).trim();
       if (payload.age != null) patch.age = Number(payload.age);
       if (payload.height != null) patch.height = Number(payload.height);
       if (payload.targetCalories != null) patch.target_calories = Number(payload.targetCalories);
@@ -555,17 +628,32 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'getState') {
-      if (!session) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const uid = session.acting.id;
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      if (ctx.auth.status !== 'approved') {
+        return json({
+          ok: true,
+          pending: true,
+          status: ctx.auth.status,
+          authUser: publicUser(ctx.auth),
+          actingUser: publicUser(ctx.auth),
+          users: [publicUser(ctx.auth)],
+          hasGemini: false,
+        });
+      }
+      const uid = ctx.acting.id;
       const { data: menus } = await sb.from('user_menus').select('*').eq('user_id', uid).maybeSingle();
       const { data: meas } = await sb.from('user_measurements').select('*').eq('user_id', uid).maybeSingle();
       const { data: admin } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
+      const users =
+        ctx.auth.role === 'superadmin'
+          ? await listUsers(sb)
+          : [publicUser(ctx.auth)];
       return json({
         ok: true,
         hasGemini: Boolean(admin?.gemini_api_key),
-        authUser: publicUser(session.auth, session.auth.role === 'superadmin'),
-        actingUser: publicUser(session.acting),
-        users: session.auth.role === 'superadmin' ? await listUsers(sb, true) : [publicUser(session.auth)],
+        authUser: publicUser(ctx.auth),
+        actingUser: publicUser(ctx.acting),
+        users,
         menus: menus?.weeks ?? null,
         menusEdited: Boolean(menus?.edited),
         menusUpdatedAt: menus?.updated_at ?? null,
@@ -575,9 +663,11 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'saveMenus') {
-      if (!session) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const uid = String(payload.userId || session.acting.id);
-      if (session.auth.role !== 'superadmin' && uid !== session.auth.id) {
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      const uid = String(payload.userId || ctx.acting.id);
+      if (ctx.auth.role !== 'superadmin' && uid !== ctx.auth.id) {
         return json({ ok: false, error: 'No puedes guardar el menú de otra persona.' }, 403);
       }
       const { error } = await sb.from('user_menus').upsert({
@@ -591,9 +681,11 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'saveMeasurements') {
-      if (!session) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const uid = String(payload.userId || session.acting.id);
-      if (session.auth.role !== 'superadmin' && uid !== session.auth.id) {
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      const uid = String(payload.userId || ctx.acting.id);
+      if (ctx.auth.role !== 'superadmin' && uid !== ctx.auth.id) {
         return json({ ok: false, error: 'No puedes guardar la báscula de otra persona.' }, 403);
       }
       const { error } = await sb.from('user_measurements').upsert({
@@ -606,15 +698,22 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'setGeminiKey') {
-      const pepeOk = session?.auth.role === 'superadmin';
-      const legacyOk = await requireAdminLegacy(sb, adminToken);
-      if (!pepeOk && !legacyOk) return json({ ok: false, error: 'Sesión de superadmin no válida.' }, 401);
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      if (ctx.auth.role !== 'superadmin') {
+        return json({ ok: false, error: 'Sesión de superadmin no válida.' }, 401);
+      }
       const apiKey = normalizeGeminiKey(String(payload.apiKey || ''));
       if (!isLikelyGeminiKey(apiKey)) {
-        return json({
-          ok: false,
-          error: 'Esa no parece una clave de Google AI Studio. Debe empezar por AIza o por AQ. (las nuevas). No uses la contraseña de María en ese campo.',
-        }, 400);
+        return json(
+          {
+            ok: false,
+            error:
+              'Esa no parece una clave de Google AI Studio. Debe empezar por AIza o por AQ. (las nuevas).',
+          },
+          400
+        );
       }
       await ensureAdminRow(sb);
       const { error } = await sb
@@ -626,16 +725,18 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'ask' || action === 'adjustMeal') {
-      if (!session) return json({ ok: false, error: 'Inicia sesión para usar la IA.' }, 401);
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión para usar la IA.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
       const { data } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
       const apiKey = data?.gemini_api_key;
       if (!apiKey) {
         return json({ ok: false, error: 'NO_GEMINI_KEY' }, 503);
       }
       const profile = {
-        name: session.acting.name,
-        age: session.acting.age,
-        targetCalories: session.acting.target_calories,
+        name: ctx.acting.name,
+        age: ctx.acting.age,
+        targetCalories: ctx.acting.target_calories,
       };
       if (action === 'ask') {
         const question = String(payload.question || '').slice(0, 2000);
@@ -688,17 +789,19 @@ Por favor, devuelve un JSON válido con el siguiente formato exacto:
     }
 
     if (action === 'personalizeMenu' || action === 'importMenu') {
-      if (!session) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      if (session.acting.id === 'maria_ignacia') {
+      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
+      const blocked = requireApproved(ctx);
+      if (blocked) return blocked;
+      if (ctx.acting.id === 'maria_ignacia') {
         return json({ ok: false, error: 'El menú de María Ignacia no se sustituye: es la pauta hospitalaria.' }, 403);
       }
       const { data } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
       const apiKey = data?.gemini_api_key;
       if (!apiKey) return json({ ok: false, error: 'NO_GEMINI_KEY' }, 503);
       const profile = {
-        name: session.acting.name,
-        age: session.acting.age,
-        targetCalories: session.acting.target_calories,
+        name: ctx.acting.name,
+        age: ctx.acting.age,
+        targetCalories: ctx.acting.target_calories,
       };
 
       let prompt = '';
@@ -748,9 +851,21 @@ JSON exacto:
       });
     }
 
-    // Compatibilidad: bootstrap/login antiguos de app_admin (ya no se usan en la UI).
-    if (action === 'bootstrap' || action === 'loginAdmin') {
-      return json({ ok: false, error: 'Usa las cuentas de usuario (Pepe / María).' }, 400);
+    if (
+      action === 'bootstrapUsers' ||
+      action === 'login' ||
+      action === 'setUserPassword' ||
+      action === 'bootstrap' ||
+      action === 'loginAdmin'
+    ) {
+      return json(
+        {
+          ok: false,
+          error:
+            'Auth actualizado: usa email/contraseña de Supabase (registro, entrar u olvidé mi contraseña).',
+        },
+        400
+      );
     }
 
     return json({ ok: false, error: 'Acción desconocida' }, 400);

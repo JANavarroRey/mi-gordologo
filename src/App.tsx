@@ -7,6 +7,9 @@ const MenuPage = lazy(() => import('./ui/pages/MenuPage').then((m) => ({ default
 const TrackingPage = lazy(() => import('./ui/pages/TrackingPage').then((m) => ({ default: m.TrackingPage })));
 const ShoppingPage = lazy(() => import('./ui/pages/ShoppingPage').then((m) => ({ default: m.ShoppingPage })));
 const ProfilePage = lazy(() => import('./ui/pages/ProfilePage').then((m) => ({ default: m.ProfilePage })));
+const ResetPasswordPage = lazy(() =>
+  import('./ui/pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage }))
+);
 
 function PageFallback() {
   return (
@@ -23,6 +26,7 @@ export default function App() {
       <ScrollToTop />
       <Suspense fallback={<PageFallback />}>
         <Routes>
+          <Route path="/restablecer-clave" element={<ResetPasswordPage />} />
           <Route element={<AppLayout />}>
             <Route index element={<Navigate to="/menu" replace />} />
             <Route path="/menu" element={<MenuPage />} />

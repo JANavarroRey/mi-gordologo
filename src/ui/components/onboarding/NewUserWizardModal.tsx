@@ -21,6 +21,7 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
   const [activityLevel, setActivityLevel] = useState<'sedentary' | 'moderate' | 'active'>('moderate');
   const [goal, setGoal] = useState<'lose_weight' | 'maintain'>('lose_weight');
   const [weighInDay, setWeighInDay] = useState(4); // Jueves por defecto
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +31,10 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+    if (!email.trim().includes('@')) {
+      setError('Indica un email válido.');
+      return;
+    }
     if (password.length < 6) {
       setError('La contraseña debe tener al menos 6 caracteres.');
       return;
@@ -64,6 +69,7 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
     const res = await backendService.createUser({
       id: created.id,
       name: created.name,
+      email: email.trim().toLowerCase(),
       password,
       age: created.age,
       height: created.height,
@@ -273,7 +279,17 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-neutral-700 mb-1">Contraseña del perfil (mín. 6)</label>
+            <label className="block text-xs font-bold text-neutral-700 mb-1">Email (login)</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-neutral-700 mb-1">Contraseña (mín. 6)</label>
             <input
               type="password"
               required
@@ -283,7 +299,7 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
               className="w-full text-xs p-2.5 rounded-xl border border-neutral-200"
             />
             <p className="text-[10px] text-neutral-500 mt-1">
-              Cada persona entra con su clave. El menú se crea a sus kcal, independiente de María.
+              Se crea ya aprobado (alta familiar). También pueden registrarse solos y tú los apruebas.
             </p>
           </div>
 

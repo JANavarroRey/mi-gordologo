@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Users, Calendar, Heart, Bell, Share2, UserPlus, CheckCircle2, ShieldCheck, LogOut, KeyRound, Scale, FileUp, ClipboardList } from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
 import { backendService } from '@/domain/services/backendService';
+import { authSyncService } from '@/domain/services/authSyncService';
 import { UserSelectionModal } from '@/ui/components/onboarding/UserSelectionModal';
 import { NewUserWizardModal } from '@/ui/components/onboarding/NewUserWizardModal';
 import { HabitsQuestionnaireModal } from '@/ui/components/onboarding/HabitsQuestionnaireModal';
@@ -127,7 +128,11 @@ export const ProfilePage: React.FC = () => {
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPwdMsg(null);
-    const res = await backendService.setUserPassword(activeUser.id, ownPassword);
+    if (ownPassword.length < 6) {
+      setPwdMsg('La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    const res = await authSyncService.updatePassword(ownPassword);
     if (res.ok) {
       setOwnPassword('');
       setPwdMsg('Contraseña actualizada.');
@@ -236,7 +241,8 @@ export const ProfilePage: React.FC = () => {
     window.open(url, '_blank');
   };
 
-  const isPepeProfile = storageService.isSuperadmin(activeUser.id);
+  const isPepeProfile =
+    storageService.isSuperadmin(activeUser.id) || backendService.isAuthSuperadmin();
   const isMaria = activeUser.id === 'maria_ignacia';
   const importedFromPdf = Boolean(activeUser.foodIntake?.importedFromPdf);
   const displayKcal = storageService.getMenuDisplayKcal(activeUser.id);
@@ -303,19 +309,25 @@ export const ProfilePage: React.FC = () => {
               ? `Menú importado desde PDF (~${formatKcalLabel(displayKcal)}/día, estimación). Desayunos y meriendas se mantienen.`
               : `Menú propio (~${formatKcalLabel(displayKcal)}). Tras el cuestionario, comidas y cenas se adaptan a hábitos.`}
         </p>
+        {activeUser.email && (
+          <p className="text-[11px] text-neutral-600">
+            Email: <span className="font-semibold">{activeUser.email}</span>
+          </p>
+        )}
         <form onSubmit={(e) => void handleChangePassword(e)} className="flex gap-2">
           <input
             type="password"
             value={ownPassword}
             onChange={(e) => setOwnPassword(e.target.value)}
-            minLength={activeUser.id === 'pepe' ? 8 : 6}
-            placeholder="Nueva contraseña"
+            minLength={6}
+            placeholder="Nueva contraseña de tu cuenta"
             className="flex-1 text-xs p-2.5 rounded-xl border border-neutral-200 min-w-0"
           />
           <button type="submit" className="px-3 py-2 rounded-xl bg-neutral-900 text-white font-bold text-xs shrink-0">
             Cambiar
           </button>
         </form>
+        <p className="text-[10px] text-neutral-500">También puedes usar «Olvidé mi contraseña» en la pantalla de entrada.</p>
         {!isMaria && (
           <div className="grid grid-cols-1 gap-2">
             <button

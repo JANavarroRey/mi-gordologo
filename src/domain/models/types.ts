@@ -9,6 +9,8 @@ export interface UserProfile {
   readonly linkedMenuUserId: string | null;
   readonly createdAt: string;
   readonly role?: 'superadmin' | 'member';
+  readonly email?: string | null;
+  readonly status?: 'pending' | 'approved' | 'rejected';
   readonly gender?: 'male' | 'female' | null;
   readonly activityLevel?: 'sedentary' | 'moderate' | 'active' | null;
   readonly goal?: 'lose_weight' | 'maintain' | null;
