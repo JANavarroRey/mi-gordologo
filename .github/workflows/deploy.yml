@@ -12,7 +12,8 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # cancel-in-progress can leave Pages mid-deploy and fail the next run
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
