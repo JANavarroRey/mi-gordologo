@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Calendar, Heart, Bell, Share2, UserPlus, CheckCircle2, ShieldCheck, LogOut, KeyRound, Scale, FileUp, ClipboardList } from 'lucide-react';
+import { Users, Calendar, Heart, Bell, Share2, UserPlus, CheckCircle2, ShieldCheck, LogOut, KeyRound, Scale, FileUp, ClipboardList, Eye, EyeOff } from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
 import { backendService } from '@/domain/services/backendService';
 import { authSyncService } from '@/domain/services/authSyncService';
@@ -16,6 +16,7 @@ import type { FoodIntake, UserProfile } from '@/domain/models/types';
 import { importMenuFromPdf, personalizeFromIntake, type MenuImportResult } from '@/domain/services/menuPersonalizeService';
 import { formatKcalLabel } from '@/domain/services/calorieEstimateService';
 import { PasswordField } from '@/ui/components/forms/PasswordField';
+import { knownPasswordsStore } from '@/domain/services/knownPasswordsStore';
 
 const WEEKDAY_LABELS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'] as const;
 
@@ -39,6 +40,10 @@ export const ProfilePage: React.FC = () => {
   const [showTutorialModal, setShowTutorialModal] = useState(false);
   const [ownPassword, setOwnPassword] = useState('');
   const [pwdMsg, setPwdMsg] = useState<string | null>(null);
+  const [knownOwn, setKnownOwn] = useState<string | null>(() =>
+    knownPasswordsStore.get(storageService.getActiveProfile().id)
+  );
+  const [showKnownOwn, setShowKnownOwn] = useState(false);
   const [bodyHeight, setBodyHeight] = useState(() =>
     storageService.getActiveProfile().height > 0 ? String(storageService.getActiveProfile().height) : ''
   );
@@ -65,6 +70,7 @@ export const ProfilePage: React.FC = () => {
       setBodyHeight(profile.height > 0 ? String(profile.height) : '');
       setBodyAge(profile.age > 0 ? String(profile.age) : '');
       setBodyGender(profile.gender === 'male' || profile.gender === 'female' ? profile.gender : '');
+      setKnownOwn(knownPasswordsStore.get(profile.id));
       if (typeof window !== 'undefined' && 'Notification' in window) {
         setNotificationPermission(Notification.permission);
       }
@@ -133,10 +139,14 @@ export const ProfilePage: React.FC = () => {
       setPwdMsg('La contraseña debe tener al menos 6 caracteres.');
       return;
     }
-    const res = await authSyncService.updatePassword(ownPassword);
+    const next = ownPassword;
+    const res = await authSyncService.updatePassword(next);
     if (res.ok) {
+      knownPasswordsStore.set(activeUser.id, next);
+      setKnownOwn(next);
+      setShowKnownOwn(true);
       setOwnPassword('');
-      setPwdMsg('Contraseña actualizada.');
+      setPwdMsg('Contraseña actualizada. Ya puedes verla abajo con el ojo.');
     } else {
       setPwdMsg(res.error || 'No se pudo cambiar.');
     }
@@ -315,6 +325,36 @@ export const ProfilePage: React.FC = () => {
             Email: <span className="font-semibold">{activeUser.email}</span>
           </p>
         )}
+        {knownOwn ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold text-emerald-900">Tu contraseña (en este móvil)</span>
+              <button
+                type="button"
+                onClick={() => setShowKnownOwn((v) => !v)}
+                className="p-1 rounded text-emerald-800"
+                aria-label={showKnownOwn ? 'Ocultar' : 'Ver'}
+              >
+                {showKnownOwn ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-[15px] font-mono break-all text-neutral-900 tracking-wide">
+              {showKnownOwn ? knownOwn : '••••••••••••'}
+            </p>
+            <button
+              type="button"
+              onClick={() => void navigator.clipboard?.writeText(knownOwn)}
+              className="text-[10px] font-bold text-emerald-800 underline"
+            >
+              Copiar
+            </button>
+          </div>
+        ) : (
+          <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 leading-relaxed">
+            No se puede leer la clave antigua (está cifrada). Pon una nueva abajo y podrás verla aquí siempre
+            en este móvil.
+          </p>
+        )}
         <form onSubmit={(e) => void handleChangePassword(e)} className="flex gap-2 items-stretch">
           <PasswordField
             value={ownPassword}
@@ -325,7 +365,7 @@ export const ProfilePage: React.FC = () => {
             className="flex-1 min-w-0"
           />
           <button type="submit" className="px-3 py-2 rounded-xl bg-neutral-900 text-white font-bold text-xs shrink-0">
-            Cambiar
+            Guardar
           </button>
         </form>
         <p className="text-[10px] text-neutral-500">También puedes usar «Olvidé mi contraseña» en la pantalla de entrada.</p>

@@ -221,8 +221,12 @@ export const backendService = {
     return this.call({ action: 'requestPasswordReset', email, redirectTo });
   },
 
-  adminResetPassword(userId: string) {
-    return this.call({ action: 'adminResetPassword', userId });
+  adminResetPassword(userId: string, password?: string) {
+    return this.call({
+      action: password ? 'adminSetPassword' : 'adminResetPassword',
+      userId,
+      ...(password ? { password } : {}),
+    });
   },
 
   personalizeMenu(intake: unknown) {

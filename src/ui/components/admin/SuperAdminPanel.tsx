@@ -5,6 +5,7 @@ import type { RemoteUser } from '@/domain/services/backendService';
 import { storageService } from '@/domain/services/storageService';
 import { authSyncService } from '@/domain/services/authSyncService';
 import { PasswordField, fieldInputClass } from '@/ui/components/forms/PasswordField';
+import { knownPasswordsStore } from '@/domain/services/knownPasswordsStore';
 
 export const SuperAdminPanel: React.FC = () => {
   const [status, setStatus] = useState<{
@@ -21,12 +22,21 @@ export const SuperAdminPanel: React.FC = () => {
   const [pending, setPending] = useState<RemoteUser[]>([]);
   const [linkUserId, setLinkUserId] = useState('');
   const [linkTargetId, setLinkTargetId] = useState('');
-  const [tempPasswords, setTempPasswords] = useState<Record<string, string>>({});
-  const [showTemp, setShowTemp] = useState<Record<string, boolean>>({});
+  const [draftPasswords, setDraftPasswords] = useState<Record<string, string>>({});
+  const [knownPasswords, setKnownPasswords] = useState<Record<string, string>>(() =>
+    knownPasswordsStore.getAll()
+  );
+  const [showKnown, setShowKnown] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState<string | null>(null);
   const [msgOk, setMsgOk] = useState(true);
   const [busy, setBusy] = useState(false);
   const localProfiles = storageService.getProfiles();
+
+  const rememberPassword = (userId: string, password: string) => {
+    knownPasswordsStore.set(userId, password);
+    setKnownPasswords(knownPasswordsStore.getAll());
+    setShowKnown((t) => ({ ...t, [userId]: true }));
+  };
 
   const refresh = async () => {
     if (!backendService.isConfigured()) {
@@ -111,18 +121,26 @@ export const SuperAdminPanel: React.FC = () => {
     setBusy(false);
   };
 
-  const onAdminReset = async (userId: string) => {
+  const onAdminSetPassword = async (userId: string, mode: 'set' | 'random') => {
     setBusy(true);
     setMsg(null);
-    const res = await backendService.adminResetPassword(userId);
+    const chosen = mode === 'set' ? (draftPasswords[userId] || '').trim() : undefined;
+    if (mode === 'set' && (!chosen || chosen.length < 6)) {
+      flash('Escribe una contraseña de al menos 6 caracteres (o genera una aleatoria).', false);
+      setBusy(false);
+      return;
+    }
+    const res = await backendService.adminResetPassword(userId, chosen);
     if (res.ok && res.tempPassword) {
-      setTempPasswords((t) => ({ ...t, [userId]: res.tempPassword || '' }));
-      setShowTemp((t) => ({ ...t, [userId]: true }));
+      rememberPassword(userId, res.tempPassword);
+      setDraftPasswords((d) => ({ ...d, [userId]: '' }));
       flash(
-        `Contraseña temporal creada para ${res.user?.name || 'usuario'}. Cópiala y pásasela; la anterior ya no vale.`
+        mode === 'set'
+          ? `Contraseña de ${res.user?.name || 'usuario'} guardada. Ya puedes verla abajo (ojo).`
+          : `Contraseña temporal para ${res.user?.name || 'usuario'} lista. Mírala abajo y pásasela.`
       );
     } else {
-      flash(res.error || 'No se pudo generar la contraseña.', false);
+      flash(res.error || 'No se pudo guardar la contraseña.', false);
     }
     setBusy(false);
   };
@@ -328,63 +346,107 @@ export const SuperAdminPanel: React.FC = () => {
             </ul>
           )}
 
-          <p className="text-[10px] text-neutral-500 pt-1 leading-relaxed">
-            Las contraseñas actuales no se pueden leer (van cifradas). Si alguien no puede entrar, genera una
-            temporal, cópiala y pásasela.
-          </p>
-          <ul className="space-y-2">
-            {users
-              .filter((u) => u.status === 'approved' || u.status === 'rejected')
-              .map((u) => (
-                <li key={u.id} className="rounded-xl border border-neutral-100 p-2 space-y-1.5">
-                  <div className="flex items-center justify-between gap-2 text-[11px]">
-                    <span className="truncate font-semibold text-neutral-800">
-                      {u.name}
-                      {u.email ? ` · ${u.email}` : ''}
-                    </span>
-                    <span className="shrink-0 text-neutral-400">
-                      {u.role === 'superadmin' ? 'Admin' : u.status === 'rejected' ? 'Rechazado' : 'OK'}
-                    </span>
-                  </div>
-                  {u.email && u.status === 'approved' && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void onAdminReset(u.id)}
-                      className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg border border-neutral-200 text-[10px] font-bold text-neutral-700 disabled:opacity-50"
-                    >
-                      <KeyRound className="w-3 h-3" />
-                      Generar contraseña temporal
-                    </button>
-                  )}
-                  {tempPasswords[u.id] && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-bold text-amber-900">Temporal (pásala al usuario)</span>
-                        <button
-                          type="button"
-                          onClick={() => setShowTemp((t) => ({ ...t, [u.id]: !t[u.id] }))}
-                          className="p-1 rounded text-amber-800"
-                          aria-label={showTemp[u.id] ? 'Ocultar' : 'Ver'}
-                        >
-                          {showTemp[u.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
+          <div className="pt-2 space-y-2">
+            <label className="flex items-center gap-1.5 text-[11px] font-bold text-neutral-700">
+              <KeyRound className="w-3.5 h-3.5 text-emerald-600" />
+              Contraseñas (tú y el resto)
+            </label>
+            <p className="text-[10px] text-neutral-500 leading-relaxed">
+              El servidor no puede devolver la clave antigua (va cifrada). Aquí defines una nueva para cada
+              persona; queda visible en este móvil con el ojo 👁 para que siempre sepas la de María, la tuya,
+              etc.
+            </p>
+            <ul className="space-y-3">
+              {users
+                .filter((u) => u.status === 'approved' || u.status === 'rejected')
+                .map((u) => {
+                  const known = knownPasswords[u.id];
+                  return (
+                    <li key={u.id} className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="truncate font-bold text-neutral-900">
+                          {u.name}
+                          {u.email ? (
+                            <span className="font-normal text-neutral-500"> · {u.email}</span>
+                          ) : null}
+                        </span>
+                        <span className="shrink-0 text-neutral-400">
+                          {u.role === 'superadmin' ? 'Admin' : u.status === 'rejected' ? 'Rechazado' : 'OK'}
+                        </span>
                       </div>
-                      <p className="text-[13px] font-mono break-all text-neutral-900">
-                        {showTemp[u.id] ? tempPasswords[u.id] : '••••••••••••'}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => void navigator.clipboard?.writeText(tempPasswords[u.id])}
-                        className="text-[10px] font-bold text-emerald-800 underline"
-                      >
-                        Copiar
-                      </button>
-                    </div>
-                  )}
-                </li>
-              ))}
-          </ul>
+
+                      {known ? (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-2 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold text-emerald-900">Contraseña conocida</span>
+                            <button
+                              type="button"
+                              onClick={() => setShowKnown((t) => ({ ...t, [u.id]: !t[u.id] }))}
+                              className="p-1 rounded text-emerald-800"
+                              aria-label={showKnown[u.id] ? 'Ocultar' : 'Ver'}
+                            >
+                              {showKnown[u.id] ? (
+                                <EyeOff className="w-4 h-4" />
+                              ) : (
+                                <Eye className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+                          <p className="text-[15px] font-mono break-all text-neutral-900 tracking-wide">
+                            {showKnown[u.id] ? known : '••••••••••••'}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => void navigator.clipboard?.writeText(known)}
+                            className="text-[10px] font-bold text-emerald-800 underline"
+                          >
+                            Copiar
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                          Aún no hay clave guardada en este móvil. Define una abajo para poder verla.
+                        </p>
+                      )}
+
+                      {u.email && u.status === 'approved' && (
+                        <div className="space-y-1.5">
+                          <PasswordField
+                            value={draftPasswords[u.id] || ''}
+                            onChange={(v) => setDraftPasswords((d) => ({ ...d, [u.id]: v }))}
+                            placeholder="Nueva contraseña para esta cuenta"
+                            minLength={6}
+                            autoComplete="off"
+                          />
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void onAdminSetPassword(u.id, 'set')}
+                              className="flex-1 py-2 rounded-xl bg-neutral-900 text-white text-[11px] font-bold disabled:opacity-50"
+                            >
+                              Guardar y poder verla
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void onAdminSetPassword(u.id, 'random')}
+                              className="px-2.5 py-2 rounded-xl border border-neutral-200 text-[10px] font-bold text-neutral-700 disabled:opacity-50"
+                              title="Generar aleatoria"
+                            >
+                              Aleatoria
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+            </ul>
+            {users.filter((u) => u.status === 'approved' || u.status === 'rejected').length === 0 && (
+              <p className="text-[10px] text-neutral-500">No hay usuarios aprobados todavía.</p>
+            )}
+          </div>
         </div>
       )}
 

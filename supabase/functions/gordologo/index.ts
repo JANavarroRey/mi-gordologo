@@ -874,7 +874,7 @@ Deno.serve(async (req) => {
       return json({ ok: true, hasMailSmtp: true, mailSmtpUser: smtpUser });
     }
 
-    if (action === 'adminResetPassword') {
+    if (action === 'adminResetPassword' || action === 'adminSetPassword') {
       if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
       const blocked = requireApproved(ctx);
       if (blocked) return blocked;
@@ -888,14 +888,20 @@ Deno.serve(async (req) => {
       if (!authUid) {
         return json({ ok: false, error: 'Ese perfil no tiene cuenta de email vinculada.' }, 400);
       }
-      const tempPassword = randomTempPassword(12);
+      const chosen = String(payload.password || '').trim();
+      if (chosen && chosen.length < 6) {
+        return json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' }, 400);
+      }
+      const tempPassword = chosen || randomTempPassword(12);
       const { error } = await sb.auth.admin.updateUserById(authUid, { password: tempPassword });
       if (error) return json({ ok: false, error: error.message }, 500);
       return json({
         ok: true,
         tempPassword,
         user: publicUser(target as UserRow),
-        message: 'Contraseña temporal generada. Compártela por un canal seguro y pide que la cambie en Perfil.',
+        message: chosen
+          ? 'Contraseña actualizada. Guárdala: el servidor no podrá volver a mostrarla después.'
+          : 'Contraseña temporal generada. Compártela por un canal seguro.',
       });
     }
 
