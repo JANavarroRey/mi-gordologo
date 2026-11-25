@@ -43,9 +43,14 @@ export async function getSession(): Promise<Session | null> {
   return data.session;
 }
 
+/** URL pública de la app (evitar localhost en emails de recuperación). */
+export const PUBLIC_APP_URL = 'https://janavarrorey.github.io/mi-gordologo';
+
 /** Base URL de la SPA (GitHub Pages / local) para redirects de Auth. */
 export function authRedirectBase(): string {
+  if (typeof window === 'undefined') return PUBLIC_APP_URL;
   const { origin, pathname } = window.location;
+  if (/localhost|127\.0\.0\.1/i.test(origin)) return PUBLIC_APP_URL;
   // pathname en Pages suele ser /repo/ o /
   return `${origin}${pathname.replace(/\/$/, '') || ''}`;
 }

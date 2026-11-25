@@ -3,8 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { KeyRound } from 'lucide-react';
 import { authSyncService } from '@/domain/services/authSyncService';
 import { getSupabase } from '@/domain/services/supabaseClient';
+import { knownPasswordsStore } from '@/domain/services/knownPasswordsStore';
+import { storageService } from '@/domain/services/storageService';
 import { assetUrl } from '@/shared/assets';
 import { PasswordField } from '@/ui/components/forms/PasswordField';
+
+function recoveryTokenFromLocation(): string | null {
+  const fromHash = window.location.hash.includes('?')
+    ? window.location.hash.slice(window.location.hash.indexOf('?') + 1)
+    : '';
+  const hashParams = new URLSearchParams(fromHash);
+  const searchParams = new URLSearchParams(window.location.search);
+  return hashParams.get('th') || searchParams.get('th');
+}
 
 export const ResetPasswordPage: React.FC = () => {
   const navigate = useNavigate();
@@ -20,15 +31,47 @@ export const ResetPasswordPage: React.FC = () => {
       setMsg('Servidor no configurado.');
       return;
     }
+
+    let cancelled = false;
+
+    const markReady = () => {
+      if (!cancelled) setReady(true);
+    };
+
     const { data: sub } = sb.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
-        setReady(true);
+        markReady();
       }
     });
-    void sb.auth.getSession().then(({ data }) => {
-      if (data.session) setReady(true);
-    });
-    return () => sub.subscription.unsubscribe();
+
+    void (async () => {
+      const th = recoveryTokenFromLocation();
+      if (th) {
+        const { error } = await sb.auth.verifyOtp({
+          token_hash: th,
+          type: 'recovery',
+        });
+        if (error) {
+          if (!cancelled) {
+            setMsg(
+              error.message ||
+                'El enlace no es válido o ya se usó. Pide otro desde «Olvidé mi contraseña».'
+            );
+          }
+        } else {
+          markReady();
+        }
+        return;
+      }
+
+      const { data } = await sb.auth.getSession();
+      if (data.session) markReady();
+    })();
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -45,7 +88,16 @@ export const ResetPasswordPage: React.FC = () => {
     setBusy(true);
     const res = await authSyncService.updatePassword(password);
     if (res.ok) {
-      setMsg('Contraseña actualizada. Ya puedes usar la app.');
+      const profileId = storageService.getActiveProfile()?.id;
+      if (profileId) {
+        knownPasswordsStore.set(profileId, password);
+      }
+      // También por email → id pepe / maria si el active aún no está sincronizado
+      await authSyncService.syncAfterAuth().catch(() => null);
+      const syncedId = storageService.getActiveProfile()?.id;
+      if (syncedId) knownPasswordsStore.set(syncedId, password);
+
+      setMsg('Contraseña actualizada. Ya puedes usarla y verla en Mi Perfil (ojo).');
       setTimeout(() => navigate('/menu', { replace: true }), 1200);
     } else {
       setMsg(res.error || 'No se pudo guardar.');

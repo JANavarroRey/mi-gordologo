@@ -392,12 +392,20 @@ Deno.serve(async (req) => {
         );
       }
 
+      // URL pública fija: evita que Supabase Site URL (localhost) rompa el enlace del email.
+      const PROD_APP = 'https://janavarrorey.github.io/mi-gordologo';
+      let safeRedirect = redirectTo;
+      if (!safeRedirect || /localhost|127\.0\.0\.1/i.test(safeRedirect)) {
+        safeRedirect = `${PROD_APP}/#/restablecer-clave`;
+      }
+
       const { data: linkData, error: linkErr } = await sb.auth.admin.generateLink({
         type: 'recovery',
         email,
-        options: redirectTo ? { redirectTo } : undefined,
+        options: { redirectTo: safeRedirect },
       });
-      if (linkErr || !linkData?.properties?.action_link) {
+      const hashedToken = String(linkData?.properties?.hashed_token || '');
+      if (linkErr || !hashedToken) {
         // No filtramos si el email existe o no (anti-enumeración), pero sí si SMTP falta
         return json({
           ok: true,
@@ -405,7 +413,8 @@ Deno.serve(async (req) => {
         });
       }
 
-      const actionLink = linkData.properties.action_link;
+      // Enlace propio a Pages (no dependemos del redirect de Supabase → localhost).
+      const actionLink = `${PROD_APP}/#/restablecer-clave?th=${encodeURIComponent(hashedToken)}`;
       try {
         await sendMailViaGmail({
           smtpUser: mail.user,

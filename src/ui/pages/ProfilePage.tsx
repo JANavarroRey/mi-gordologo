@@ -351,24 +351,39 @@ export const ProfilePage: React.FC = () => {
           </div>
         ) : (
           <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 leading-relaxed">
-            No se puede leer la clave antigua (está cifrada). Pon una nueva abajo y podrás verla aquí siempre
-            en este móvil.
+            Aún no hay clave visible aquí. Escribe una nueva abajo y pulsa <strong>Guardar</strong> (no uses el email
+            solo para verla). Después aparecerá con el ojo 👁.
           </p>
         )}
-        <form onSubmit={(e) => void handleChangePassword(e)} className="flex gap-2 items-stretch">
+        <form onSubmit={(e) => void handleChangePassword(e)} className="space-y-2">
           <PasswordField
             value={ownPassword}
             onChange={setOwnPassword}
             minLength={6}
-            placeholder="Nueva contraseña de tu cuenta"
+            placeholder="Escribe aquí la contraseña que quieras usar"
             autoComplete="new-password"
-            className="flex-1 min-w-0"
           />
-          <button type="submit" className="px-3 py-2 rounded-xl bg-neutral-900 text-white font-bold text-xs shrink-0">
-            Guardar
+          <button
+            type="submit"
+            className="w-full py-2.5 rounded-xl bg-neutral-900 text-white font-bold text-xs"
+          >
+            Guardar y poder verla en este móvil
           </button>
         </form>
-        <p className="text-[10px] text-neutral-500">También puedes usar «Olvidé mi contraseña» en la pantalla de entrada.</p>
+        {pwdMsg && /contraseña|clave|verla|actualizada|cambiar|mínimo|pudo/i.test(pwdMsg) && (
+          <p
+            className={`text-[11px] font-semibold rounded-xl px-3 py-2 border ${
+              /no se pudo|debe tener/i.test(pwdMsg)
+                ? 'text-rose-900 bg-rose-50 border-rose-200'
+                : 'text-emerald-900 bg-emerald-50 border-emerald-200'
+            }`}
+          >
+            {pwdMsg}
+          </p>
+        )}
+        <p className="text-[10px] text-neutral-500">
+          «Olvidé mi contraseña» también funciona; el enlace nuevo ya abre la web pública (no localhost).
+        </p>
         {!isMaria && (
           <div className="grid grid-cols-1 gap-2">
             <button
@@ -411,7 +426,9 @@ export const ProfilePage: React.FC = () => {
           <LogOut className="w-3.5 h-3.5" />
           Cerrar sesión
         </button>
-        {pwdMsg && <p className="text-[11px] text-neutral-600">{pwdMsg}</p>}
+        {pwdMsg && !/contraseña|clave|verla|actualizada|cambiar|mínimo|pudo/i.test(pwdMsg) && (
+          <p className="text-[11px] text-neutral-600">{pwdMsg}</p>
+        )}
       </div>
 
       {/* Datos corporales (altura para IMC; solo editable aquí) */}
