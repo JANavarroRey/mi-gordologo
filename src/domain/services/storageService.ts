@@ -1,6 +1,6 @@
 import type { UserProfile, BodyMeasurement, WeekMenu, DayMenu, ShoppingItem } from '../models/types';
 import { getHospitalMenuSeed } from '@/data/hospitalMenuSeed';
-import { computeTargetCalories, scaleWeekMenus, scaleWeekMenusByFactor } from './menuScaleService';
+import { scaleWeekMenus, scaleWeekMenusByFactor } from './menuScaleService';
 
 const STORAGE_KEYS = {
   PROFILES: 'migordologo_profiles',
@@ -11,112 +11,34 @@ const STORAGE_KEYS = {
   SHOPPING: 'migordologo_shopping',
   SERVINGS: 'migordologo_servings',
   FREE_DAY: 'migordologo_free_day',
-  GEMINI_KEY: 'migordologo_gemini_key',
   ALERT_SETTINGS: 'migordologo_alert_settings',
   DISMISSED_ALERT: 'migordologo_dismissed_alert',
   SEED_VERSION: 'migordologo_seed_version',
 };
 
-export const SUPERADMIN_PROFILE_ID = 'pepe';
-
-export const DEFAULT_PROFILES: UserProfile[] = [
-  {
-    id: 'maria_ignacia',
-    name: 'María Ignacia',
-    age: 68,
-    height: 167,
-    targetCalories: 1500,
-    linkedMenuUserId: null,
-    createdAt: '2026-09-10T10:00:00Z',
-    role: 'member',
-    gender: 'female',
-    activityLevel: 'sedentary',
-    goal: 'lose_weight',
-  },
-  {
-    id: SUPERADMIN_PROFILE_ID,
-    name: 'Pepe',
-    age: 0,
-    height: 0,
-    targetCalories: 1500,
-    linkedMenuUserId: null,
-    createdAt: '2026-10-06T10:00:00Z',
-    role: 'superadmin',
-  },
+const LEGACY_KEYS_TO_PURGE = [
+  'gordologo_known_passwords_v1',
+  'migordologo_gemini_key',
+  'migordologo_family_key',
+  'migordologo_auth_role',
 ];
 
-function ensureBuiltinProfiles(profiles: UserProfile[]): UserProfile[] {
-  const hasMaria = profiles.some((p) => p.id === 'maria_ignacia');
-  const hasPepe = profiles.some((p) => p.id === SUPERADMIN_PROFILE_ID);
-  let next = [...profiles];
-  if (!hasMaria) {
-    next.unshift(DEFAULT_PROFILES[0]);
-  }
-  if (!hasPepe) {
-    const pepe = DEFAULT_PROFILES.find((p) => p.id === SUPERADMIN_PROFILE_ID);
-    if (pepe) next.push(pepe);
-  }
-  next = next.map((p) => {
-    if (p.id === SUPERADMIN_PROFILE_ID) {
-      return {
-        ...p,
-        linkedMenuUserId: null,
-        role: 'superadmin' as const,
-        targetCalories: 1500,
-      };
-    }
-    return p.role ? p : { ...p, role: 'member' as const };
-  });
-  return next;
-}
+const EMPTY_FALLBACK_PROFILE: UserProfile = {
+  id: '',
+  name: 'Usuario',
+  age: 0,
+  height: 0,
+  targetCalories: 1500,
+  linkedMenuUserId: null,
+  createdAt: '',
+  role: 'member',
+  email: null,
+  status: 'pending',
+};
 
 function scheduleServerPush() {
   void import('./authSyncService').then(({ authSyncService }) => authSyncService.schedulePush());
 }
-
-// Mediciones reales extraídas del informe clínico del Hospital Morales Meseguer
-export const INITIAL_MEASUREMENTS: BodyMeasurement[] = [
-  {
-    id: 'm1',
-    userId: 'maria_ignacia',
-    date: '2026-09-10',
-    weight: 78.9,
-    bmi: 28.3,
-    fatMass: 33.9,
-    fatPercent: 43.0,
-    freeFatMass: 45.0,
-    leanMass: 42.7,
-    skeletalMuscle: 25.5,
-    totalWater: 31.5,
-    waterPercent: 39.9,
-    boneMinerals: 2.3,
-    proteins: 11.2,
-    visceralFat: 11,
-    metabolicRate: 9,
-    metabolicAge: 77,
-    basalMetabolism: 1377,
-  },
-  {
-    id: 'm2',
-    userId: 'maria_ignacia',
-    date: '2026-09-22',
-    weight: 77.8,
-    bmi: 27.9,
-    fatMass: 33.3,
-    fatPercent: 42.8,
-    freeFatMass: 44.5,
-    leanMass: 42.2,
-    skeletalMuscle: 25.2,
-    totalWater: 31.1,
-    waterPercent: 40.0,
-    boneMinerals: 2.3,
-    proteins: 11.1,
-    visceralFat: 11,
-    metabolicRate: 9,
-    metabolicAge: 77,
-    basalMetabolism: 1362,
-  },
-];
 
 export interface EmailAlertSettings {
   email: string;
@@ -126,6 +48,32 @@ export interface EmailAlertSettings {
 }
 
 export const storageService = {
+  /** Elimina rastros legacy inseguros (contraseñas o claves API en localStorage). */
+  purgeLegacySecrets(): void {
+    for (const k of LEGACY_KEYS_TO_PURGE) {
+      localStorage.removeItem(k);
+    }
+  },
+
+  /** Limpieza integral al cerrar sesión o cambiar de cuenta en un mismo navegador. */
+  clearSessionData(): void {
+    this.purgeLegacySecrets();
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (
+        key.startsWith('migordologo_') &&
+        key !== 'migordologo_install_dismissed'
+      ) {
+        keysToRemove.push(key);
+      }
+    }
+    for (const key of keysToRemove) {
+      localStorage.removeItem(key);
+    }
+  },
+
   // Onboarding inicial
   hasCompletedOnboarding(): boolean {
     return localStorage.getItem(STORAGE_KEYS.ONBOARDING_DONE) === 'true';
@@ -135,65 +83,49 @@ export const storageService = {
     localStorage.setItem(STORAGE_KEYS.ONBOARDING_DONE, val ? 'true' : 'false');
   },
 
-  // Perfiles
+  // Perfiles (estrictamente hidratados desde el servidor; sin inyectar otros usuarios)
   getProfiles(): UserProfile[] {
     const raw = localStorage.getItem(STORAGE_KEYS.PROFILES);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(DEFAULT_PROFILES));
-      return DEFAULT_PROFILES;
-    }
+    if (!raw) return [];
     try {
       const parsed: UserProfile[] = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const withBuiltins = ensureBuiltinProfiles(parsed);
-        const changed =
-          withBuiltins.length !== parsed.length ||
-          withBuiltins.some((p, i) => p.linkedMenuUserId !== parsed[i]?.linkedMenuUserId || p.role !== parsed[i]?.role);
-        if (changed) {
-          localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(withBuiltins));
-        }
-        return withBuiltins;
-      }
-      localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(DEFAULT_PROFILES));
-      return DEFAULT_PROFILES;
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
-      return DEFAULT_PROFILES;
+      return [];
     }
   },
 
   getActiveUserId(): string {
-    return localStorage.getItem(STORAGE_KEYS.ACTIVE_USER) || 'maria_ignacia';
+    return localStorage.getItem(STORAGE_KEYS.ACTIVE_USER) || '';
   },
 
   setActiveUserId(id: string): void {
+    if (!id) {
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_USER);
+      return;
+    }
     localStorage.setItem(STORAGE_KEYS.ACTIVE_USER, id);
     localStorage.setItem(STORAGE_KEYS.ONBOARDING_DONE, 'true');
-    // El evento nativo `storage` no se dispara en la misma pestaña.
     window.dispatchEvent(new Event('storage'));
   },
 
   getProfileById(id: string): UserProfile | undefined {
+    if (!id) return undefined;
     return this.getProfiles().find((p) => p.id === id);
   },
 
   getActiveProfile(): UserProfile {
     const profiles = this.getProfiles();
     const activeId = this.getActiveUserId();
-    return profiles.find((p) => p.id === activeId) || profiles[0];
-  },
-
-  isSuperadmin(userId?: string): boolean {
-    const id = userId || this.getActiveUserId();
-    const profile = this.getProfileById(id);
-    return id === SUPERADMIN_PROFILE_ID || profile?.role === 'superadmin';
+    return profiles.find((p) => p.id === activeId) || profiles[0] || EMPTY_FALLBACK_PROFILE;
   },
 
   needsHabitsQuiz(userId?: string): boolean {
     const id = userId || this.getActiveUserId();
-    // María y Pepe parten del menú hospitalario base; la encuesta es para perfiles nuevos.
-    if (id === 'maria_ignacia' || id === SUPERADMIN_PROFILE_ID) return false;
+    if (!id || id === 'maria_ignacia' || id === 'pepe') return false;
     const p = this.getProfileById(id);
-    return Boolean(p) && !p?.foodIntake?.completedAt;
+    if (!p || p.role === 'superadmin') return false;
+    return !p.foodIntake?.completedAt;
   },
 
   setFoodIntake(intake: UserProfile['foodIntake'], userId?: string): void {
@@ -204,10 +136,11 @@ export const storageService = {
   },
 
   replaceProfiles(profiles: UserProfile[]): void {
-    localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(ensureBuiltinProfiles(profiles)));
+    localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
   },
 
   upsertProfile(updated: UserProfile): void {
+    if (!updated.id) return;
     const profiles = this.getProfiles();
     const idx = profiles.findIndex((p) => p.id === updated.id);
     if (idx >= 0) profiles[idx] = { ...profiles[idx], ...updated };
@@ -231,6 +164,7 @@ export const storageService = {
   /** Recalcula el IMC de todos los pesajes al cambiar la estatura del perfil. */
   recalculateMeasurementBmis(userId?: string): void {
     const id = userId || this.getActiveUserId();
+    if (!id) return;
     const height = this.getProfileById(id)?.height ?? 0;
     const list = this.getMeasurements(id).map((m) => ({
       ...m,
@@ -252,140 +186,56 @@ export const storageService = {
     scheduleServerPush();
   },
 
-  createNewProfileWithIntake(data: {
-    name: string;
-    age: number;
-    height: number;
-    weight: number;
-    gender?: 'male' | 'female';
-    activityLevel: 'sedentary' | 'moderate' | 'active';
-    goal: 'lose_weight' | 'maintain';
-    linkedMenuUserId: string | null;
-    weighInDay?: number;
-    id?: string;
-  }): UserProfile {
-    const targetCalories = computeTargetCalories({
-      age: data.age,
-      height: data.height,
-      weight: data.weight,
-      gender: data.gender,
-      activityLevel: data.activityLevel,
-      goal: data.goal,
-    });
-    const genderOffset = data.gender === 'female' ? -161 : 5;
-    const bmr = 10 * data.weight + 6.25 * data.height - 5 * data.age + genderOffset;
-
-    const id = data.id || `usr_${Date.now()}`;
-    const newProfile: UserProfile = {
-      id,
-      name: data.name.trim(),
-      age: data.age,
-      height: data.height,
-      targetCalories,
-      linkedMenuUserId: null,
-      createdAt: new Date().toISOString(),
-      role: 'member',
-      gender: data.gender ?? null,
-      activityLevel: data.activityLevel,
-      goal: data.goal,
-      foodIntake: null,
-    };
-
-    const profiles = this.getProfiles();
-    profiles.push(newProfile);
-    localStorage.setItem(STORAGE_KEYS.PROFILES, JSON.stringify(profiles));
-
-    // Si especificó día de pesaje, configurarlo
-    if (data.weighInDay !== undefined) {
-      this.setWeighInDay(data.weighInDay, id);
-    }
-
-    // Si tiene peso inicial, crear primera medición en su báscula privada
-    if (data.weight > 0) {
-      this.addMeasurement({
-        userId: id,
-        date: new Date().toISOString().split('T')[0],
-        weight: data.weight,
-        bmi: parseFloat((data.weight / ((data.height / 100) * (data.height / 100))).toFixed(1)),
-        fatMass: null,
-        fatPercent: null,
-        freeFatMass: null,
-        leanMass: null,
-        skeletalMuscle: null,
-        totalWater: null,
-        waterPercent: null,
-        boneMinerals: null,
-        proteins: null,
-        visceralFat: null,
-        metabolicRate: null,
-        metabolicAge: data.age,
-        basalMetabolism: Math.round(bmr),
-      }, id);
-    }
-
-    this.setActiveUserId(id);
-    const scaled = scaleWeekMenus(getHospitalMenuSeed(), 1500);
-    this.saveMenus(scaled, id);
-    localStorage.setItem(`${STORAGE_KEYS.MENUS}_${id}_kcal`, '1500');
-    localStorage.setItem(`${STORAGE_KEYS.MENUS}_${id}_display_kcal`, '1500');
-    scheduleServerPush();
-    return newProfile;
-  },
-
-  addProfile(name: string, age: number, height: number): UserProfile {
-    return this.createNewProfileWithIntake({
-      name,
-      age,
-      height,
-      weight: 70,
-      activityLevel: 'moderate',
-      goal: 'lose_weight',
-      linkedMenuUserId: null,
-    });
-  },
-
   // Raciones (1 o 2 personas)
   getServings(userId?: string): number {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return 1;
     const raw = localStorage.getItem(`${STORAGE_KEYS.SERVINGS}_${targetUser}`);
     if (raw) return parseInt(raw, 10);
-    // Para María Ignacia por defecto son 2 (madre + padre)
     return targetUser === 'maria_ignacia' ? 2 : 1;
   },
 
-  setServings(count: number, userId?: string): void {
+  setServings(count: number, userId?: string, sync = true): void {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
     localStorage.setItem(`${STORAGE_KEYS.SERVINGS}_${targetUser}`, count.toString());
-    scheduleServerPush();
+    if (sync) scheduleServerPush();
   },
 
-  // Día libre: desactivado por defecto. Si se habilita, se elige el día (0=Lun…6=Dom).
+  // Día libre: desactivado por defecto.
   isFreeDayEnabled(userId?: string): boolean {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return false;
     return localStorage.getItem(`${STORAGE_KEYS.FREE_DAY}_${targetUser}_enabled`) === '1';
   },
 
-  setFreeDayEnabled(enabled: boolean, userId?: string): void {
+  setFreeDayEnabled(enabled: boolean, userId?: string, sync = true): void {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
     localStorage.setItem(`${STORAGE_KEYS.FREE_DAY}_${targetUser}_enabled`, enabled ? '1' : '0');
+    if (sync) scheduleServerPush();
   },
 
   getFreeDay(userId?: string): number {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return 5;
     const raw = localStorage.getItem(`${STORAGE_KEYS.FREE_DAY}_${targetUser}`);
-    if (raw === null || raw === undefined || raw === '') return 5; // Preferencia al habilitar: sábado
+    if (raw === null || raw === undefined || raw === '') return 5;
     const parsed = parseInt(raw, 10);
     return Number.isNaN(parsed) ? 5 : parsed;
   },
 
-  setFreeDay(dayIndex: number, userId?: string): void {
+  setFreeDay(dayIndex: number, userId?: string, sync = true): void {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
     localStorage.setItem(`${STORAGE_KEYS.FREE_DAY}_${targetUser}`, dayIndex.toString());
+    if (sync) scheduleServerPush();
   },
 
   // Menús Semanales (con soporte de menú enlazado / compartido)
   getMenus(userId?: string): WeekMenu[] {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return [];
     const profile = this.getProfileById(targetUser);
     const menuOwnerId = profile?.linkedMenuUserId || targetUser;
     const freeEnabled = this.isFreeDayEnabled(targetUser);
@@ -400,16 +250,10 @@ export const storageService = {
         })),
       }));
 
-    const storedVersion = localStorage.getItem(STORAGE_KEYS.SEED_VERSION);
-    const CURRENT_VERSION = 'v2026_hospital_balance_v1';
-    const scaledSeed = () => scaleWeekMenus(getHospitalMenuSeed(), 1500);
-
     const raw = localStorage.getItem(`${STORAGE_KEYS.MENUS}_${menuOwnerId}`);
-    if (!raw || storedVersion !== CURRENT_VERSION) {
-      // Nueva versión del seed: todos los perfiles vuelven al menú hospitalario 1.500 kcal.
-      const initial = scaledSeed();
+    if (!raw) {
+      const initial = scaleWeekMenus(getHospitalMenuSeed(), 1500);
       this.saveMenus(initial, menuOwnerId);
-      localStorage.setItem(STORAGE_KEYS.SEED_VERSION, CURRENT_VERSION);
       localStorage.setItem(`${STORAGE_KEYS.MENUS}_${menuOwnerId}_kcal`, '1500');
       localStorage.setItem(`${STORAGE_KEYS.MENUS}_${menuOwnerId}_display_kcal`, '1500');
       localStorage.setItem(`${STORAGE_KEYS.MENUS}_${menuOwnerId}_edited`, '0');
@@ -418,7 +262,6 @@ export const storageService = {
 
     try {
       const parsed: WeekMenu[] = JSON.parse(raw);
-      // Sanitización preventiva: Si alguna comida tiene URLs obsoletas /r..., se limpia automáticamente
       let hasLegacyUrls = false;
       const sanitized: WeekMenu[] = parsed.map((w) => ({
         ...w,
@@ -456,6 +299,7 @@ export const storageService = {
 
   saveMenus(menus: WeekMenu[], userId?: string): void {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
     const profile = this.getProfileById(targetUser);
     const menuOwnerId = profile?.linkedMenuUserId || targetUser;
     localStorage.setItem(`${STORAGE_KEYS.MENUS}_${menuOwnerId}`, JSON.stringify(menus));
@@ -463,6 +307,7 @@ export const storageService = {
 
   replaceUserMenus(menus: WeekMenu[], userId?: string): void {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
     this.saveMenus(menus, targetUser);
     localStorage.setItem(`${STORAGE_KEYS.MENUS}_${targetUser}_edited`, '1');
     scheduleServerPush();
@@ -471,8 +316,8 @@ export const storageService = {
 
   getMenuDisplayKcal(userId?: string): number {
     const id = userId || this.getActiveUserId();
+    if (!id) return 1500;
     const profile = this.getProfileById(id);
-    // Prioriza la kcal del menú actual (seed / PDF / hábitos), no un estimado antiguo del cuestionario.
     const stored = Number(localStorage.getItem(`${STORAGE_KEYS.MENUS}_${id}_display_kcal`) || 0);
     if (stored > 0) return stored;
     const fromIntake = profile?.foodIntake?.estimatedDailyKcal;
@@ -482,21 +327,23 @@ export const storageService = {
 
   setMenuDisplayKcal(kcal: number, userId?: string): void {
     const id = userId || this.getActiveUserId();
+    if (!id) return;
     localStorage.setItem(`${STORAGE_KEYS.MENUS}_${id}_display_kcal`, String(Math.round(kcal)));
   },
 
-  /** Tras cambiar el menú (PDF / hábitos), regenera la lista de compra limpiando checks. */
-  resetShoppingListsForMenuChange(): void {
+  resetShoppingListsForMenuChange(userId?: string): void {
+    const targetUser = userId || this.getActiveUserId();
     for (let w = 1; w <= 8; w++) {
+      if (targetUser) {
+        localStorage.removeItem(`${STORAGE_KEYS.SHOPPING}_checked_${targetUser}_${w}`);
+      }
       localStorage.removeItem(`${STORAGE_KEYS.SHOPPING}_checked_${w}`);
     }
     window.dispatchEvent(new Event('storage'));
   },
 
-  /** Aplica el menú hospitalario 1.500 kcal a todos los perfiles (inicio común). */
+  /** Acción explícita de admin: restaura el menú hospitalario de 1.500 kcal en los perfiles cargados. */
   forceHospitalSeedOnAllProfiles(): string[] {
-    const CURRENT_VERSION = 'v2026_hospital_balance_v2';
-    localStorage.setItem(STORAGE_KEYS.SEED_VERSION, CURRENT_VERSION);
     const seed = scaleWeekMenus(getHospitalMenuSeed(), 1500);
     const touched: string[] = [];
     for (const p of this.getProfiles()) {
@@ -517,7 +364,7 @@ export const storageService = {
         estimatedDailyKcal: 1500,
       };
       const nextIntake =
-        p.id === 'maria_ignacia' || p.id === SUPERADMIN_PROFILE_ID
+        p.id === 'maria_ignacia' || p.role === 'superadmin'
           ? hospitalIntake
           : p.foodIntake
             ? { ...p.foodIntake, importedFromPdf: false, estimatedDailyKcal: 1500 }
@@ -526,22 +373,23 @@ export const storageService = {
         ...p,
         targetCalories: 1500,
         foodIntake: nextIntake,
-        linkedMenuUserId: p.id === SUPERADMIN_PROFILE_ID ? null : p.linkedMenuUserId,
+        linkedMenuUserId: p.role === 'superadmin' ? null : p.linkedMenuUserId,
       });
+      this.resetShoppingListsForMenuChange(p.id);
       touched.push(p.id);
     }
-    this.resetShoppingListsForMenuChange();
     window.dispatchEvent(new Event('storage'));
     return touched;
   },
 
-  /** true si el seed local no es la versión hospitalaria actual. */
-  needsHospitalSeedReset(): boolean {
-    return localStorage.getItem(STORAGE_KEYS.SEED_VERSION) !== 'v2026_hospital_balance_v2';
-  },
-
-  updateDayMenu(weekIndex: number, dayIndex: number, updatedDay: WeekMenu['days'][0], userId?: string): void {
+  updateDayMenu(
+    weekIndex: number,
+    dayIndex: number,
+    updatedDay: WeekMenu['days'][0],
+    userId?: string
+  ): void {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
     const profile = this.getProfileById(targetUser);
     const menuOwnerId = profile?.linkedMenuUserId || targetUser;
 
@@ -556,19 +404,15 @@ export const storageService = {
     }
   },
 
-  // Mediciones corporales
+  // Mediciones corporales (aisladas por usuario; hidratadas desde Supabase)
   getMeasurements(userId?: string): BodyMeasurement[] {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return [];
     const raw = localStorage.getItem(`${STORAGE_KEYS.MEASUREMENTS}_${targetUser}`);
-    if (!raw) {
-      if (targetUser === 'maria_ignacia') {
-        localStorage.setItem(`${STORAGE_KEYS.MEASUREMENTS}_${targetUser}`, JSON.stringify(INITIAL_MEASUREMENTS));
-        return INITIAL_MEASUREMENTS;
-      }
-      return [];
-    }
+    if (!raw) return [];
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
@@ -592,6 +436,7 @@ export const storageService = {
 
   deleteMeasurement(id: string, userId?: string): void {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
     const list = this.getMeasurements(targetUser);
     const updated = list.filter((m) => m.id !== id);
     localStorage.setItem(`${STORAGE_KEYS.MEASUREMENTS}_${targetUser}`, JSON.stringify(updated));
@@ -600,11 +445,13 @@ export const storageService = {
 
   replaceMeasurements(list: BodyMeasurement[], userId?: string): void {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
     localStorage.setItem(`${STORAGE_KEYS.MEASUREMENTS}_${targetUser}`, JSON.stringify(list));
   },
 
   rescaleMenusToCalories(userId?: string): WeekMenu[] {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return [];
     const profile = this.getProfileById(targetUser);
     const nextKcal = profile?.targetCalories || 1500;
     const lastKcal = Number(localStorage.getItem(`${STORAGE_KEYS.MENUS}_${targetUser}_kcal`) || 1500);
@@ -618,31 +465,37 @@ export const storageService = {
     return scaled;
   },
 
-  // Configuración del día de pesaje semanal (0=Domingo, 1=Lunes, ..., 4=Jueves)
+  // Día de pesaje semanal (0=Domingo, 1=Lunes, ..., 4=Jueves)
   getWeighInDay(userId?: string): number {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return 4;
     const raw = localStorage.getItem(`migordologo_weighin_day_${targetUser}`);
     if (raw !== null) {
       const parsed = parseInt(raw, 10);
       if (!isNaN(parsed) && parsed >= 0 && parsed <= 6) return parsed;
     }
-    return 4; // Por defecto: Jueves por la mañana (4)
+    return 4;
   },
 
-  setWeighInDay(day: number, userId?: string): void {
+  setWeighInDay(day: number, userId?: string, sync = true): void {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
     localStorage.setItem(`migordologo_weighin_day_${targetUser}`, day.toString());
+    if (sync) scheduleServerPush();
   },
 
-  // Detección de alerta de pesaje semanal pendiente (sólo en el día configurado)
-  needsWeeklyWeighIn(userId?: string): { needed: boolean; daysSinceLast: number; lastDate: string | null } {
+  needsWeeklyWeighIn(userId?: string): {
+    needed: boolean;
+    daysSinceLast: number;
+    lastDate: string | null;
+  } {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return { needed: false, daysSinceLast: 0, lastDate: null };
     const list = this.getMeasurements(targetUser);
     const now = new Date();
     const currentDayOfWeek = now.getDay();
     const configuredDay = this.getWeighInDay(targetUser);
 
-    // Si hoy NO es el día configurado de pesaje, no mostrar la alerta
     if (currentDayOfWeek !== configuredDay) {
       return {
         needed: false,
@@ -658,22 +511,18 @@ export const storageService = {
     const last = list[list.length - 1];
     const todayStr = now.toISOString().split('T')[0];
 
-    // Si ya se ha pesado hoy, no mostrar
     if (last.date === todayStr) {
       return { needed: false, daysSinceLast: 0, lastDate: last.date };
     }
 
     const lastTime = new Date(last.date).getTime();
-    const nowTime = now.getTime();
-    const diffDays = Math.floor((nowTime - lastTime) / (1000 * 60 * 60 * 24));
-
-    // Si ya se pesó hace menos de 6 días, no mostrar
+    const diffDays = Math.floor((now.getTime() - lastTime) / (1000 * 60 * 60 * 24));
     if (diffDays < 6) {
       return { needed: false, daysSinceLast: diffDays, lastDate: last.date };
     }
 
-    // Si la alerta ya fue descartada hoy, no molestar más
-    const dismissedToday = localStorage.getItem(`${STORAGE_KEYS.DISMISSED_ALERT}_${targetUser}_${todayStr}`) === 'true';
+    const dismissedToday =
+      localStorage.getItem(`${STORAGE_KEYS.DISMISSED_ALERT}_${targetUser}_${todayStr}`) === 'true';
     return {
       needed: !dismissedToday,
       daysSinceLast: diffDays,
@@ -683,37 +532,16 @@ export const storageService = {
 
   dismissWeighInAlert(userId?: string): void {
     const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
     const today = new Date().toISOString().split('T')[0];
     localStorage.setItem(`${STORAGE_KEYS.DISMISSED_ALERT}_${targetUser}_${today}`, 'true');
   },
 
-  // Ajustes de alertas por email
-  getEmailAlertSettings(userId?: string): EmailAlertSettings {
+  // Lista de compras aislada por usuario
+  getShoppingChecked(weekNum: number, userId?: string): Record<string, boolean> {
     const targetUser = userId || this.getActiveUserId();
-    const raw = localStorage.getItem(`${STORAGE_KEYS.ALERT_SETTINGS}_${targetUser}`);
-    if (raw) {
-      try {
-        return JSON.parse(raw);
-      } catch {
-        // fallback
-      }
-    }
-    return {
-      email: '',
-      enabled: false,
-      dayOfWeek: 0, // Lunes
-      time: '09:00',
-    };
-  },
-
-  saveEmailAlertSettings(settings: EmailAlertSettings, userId?: string): void {
-    const targetUser = userId || this.getActiveUserId();
-    localStorage.setItem(`${STORAGE_KEYS.ALERT_SETTINGS}_${targetUser}`, JSON.stringify(settings));
-  },
-
-  // Lista de compras
-  getShoppingChecked(weekNum: number): Record<string, boolean> {
-    const raw = localStorage.getItem(`${STORAGE_KEYS.SHOPPING}_checked_${weekNum}`);
+    if (!targetUser) return {};
+    const raw = localStorage.getItem(`${STORAGE_KEYS.SHOPPING}_checked_${targetUser}_${weekNum}`);
     if (!raw) return {};
     try {
       return JSON.parse(raw);
@@ -722,12 +550,23 @@ export const storageService = {
     }
   },
 
-  setShoppingChecked(weekNum: number, checkedMap: Record<string, boolean>): void {
-    localStorage.setItem(`${STORAGE_KEYS.SHOPPING}_checked_${weekNum}`, JSON.stringify(checkedMap));
+  setShoppingChecked(
+    weekNum: number,
+    checkedMap: Record<string, boolean>,
+    userId?: string
+  ): void {
+    const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
+    localStorage.setItem(
+      `${STORAGE_KEYS.SHOPPING}_checked_${targetUser}_${weekNum}`,
+      JSON.stringify(checkedMap)
+    );
   },
 
-  getCustomShoppingItems(weekNum: number): ShoppingItem[] {
-    const raw = localStorage.getItem(`${STORAGE_KEYS.SHOPPING}_custom_${weekNum}`);
+  getCustomShoppingItems(weekNum: number, userId?: string): ShoppingItem[] {
+    const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return [];
+    const raw = localStorage.getItem(`${STORAGE_KEYS.SHOPPING}_custom_${targetUser}_${weekNum}`);
     if (!raw) return [];
     try {
       return JSON.parse(raw);
@@ -736,31 +575,25 @@ export const storageService = {
     }
   },
 
-  saveCustomShoppingItems(weekNum: number, items: ShoppingItem[]): void {
-    localStorage.setItem(`${STORAGE_KEYS.SHOPPING}_custom_${weekNum}`, JSON.stringify(items));
-  },
-
-  // Gemini API Key
-  getGeminiApiKey(): string {
-    return localStorage.getItem(STORAGE_KEYS.GEMINI_KEY) || import.meta.env.VITE_GEMINI_API_KEY || '';
-  },
-
-  setGeminiApiKey(key: string): void {
-    localStorage.setItem(STORAGE_KEYS.GEMINI_KEY, key.trim());
+  saveCustomShoppingItems(weekNum: number, items: ShoppingItem[], userId?: string): void {
+    const targetUser = userId || this.getActiveUserId();
+    if (!targetUser) return;
+    localStorage.setItem(
+      `${STORAGE_KEYS.SHOPPING}_custom_${targetUser}_${weekNum}`,
+      JSON.stringify(items)
+    );
   },
 
   // === CONTROL TEMPORAL Y AVANCE DEL PLAN (8 SEMANAS) ===
-
   getPlanStartDate(userId?: string): Date {
-    const targetUser = userId || this.getActiveUserId();
+    const targetUser = userId || this.getActiveUserId() || 'default';
     const raw = localStorage.getItem(`migordologo_plan_start_${targetUser}`);
     if (raw) {
       const d = new Date(raw);
       if (!isNaN(d.getTime())) return d;
     }
-    // Lunes de la semana actual como punto de partida
     const now = new Date();
-    const dayOfWeek = (now.getDay() + 6) % 7; // 0=Lunes
+    const dayOfWeek = (now.getDay() + 6) % 7;
     const monday = new Date(now);
     monday.setDate(now.getDate() - dayOfWeek);
     monday.setHours(0, 0, 0, 0);
@@ -774,10 +607,10 @@ export const storageService = {
     const diffMs = now.getTime() - start.getTime();
     if (diffMs <= 0) return 0;
     const diffWeeks = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000));
-    return diffWeeks % 8; // Ciclo rotativo de 8 semanas
+    return diffWeeks % 8;
   },
 
   getCurrentDayIndex(): number {
-    return (new Date().getDay() + 6) % 7; // 0=Lunes, ..., 6=Domingo
+    return (new Date().getDay() + 6) % 7;
   },
 };

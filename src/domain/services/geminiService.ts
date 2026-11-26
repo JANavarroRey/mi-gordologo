@@ -37,18 +37,18 @@ export const geminiService = {
             },
           };
         }
-        if (res.error && res.error !== 'NO_GEMINI_KEY') {
+        if (res.error && res.error !== 'AI_UNAVAILABLE') {
           const offline = this.fallbackAdjustment(mealType, currentMeal, userPrompt);
           return {
             ...offline,
-            message: `La IA está saturada. He usado el menú del hospital: ${offline.message}`,
+            message: `He aplicado una alternativa del plan: ${offline.message}`,
           };
         }
       } catch {
         const offline = this.fallbackAdjustment(mealType, currentMeal, userPrompt);
         return {
           ...offline,
-          message: `La IA está saturada. He usado el menú del hospital: ${offline.message}`,
+          message: `He aplicado una alternativa del plan: ${offline.message}`,
         };
       }
     }
@@ -64,7 +64,7 @@ export const geminiService = {
       try {
         const res = await backendService.call({ action: 'ask', question });
         if (res.ok && res.text) return res.text;
-        if (res.error && res.error !== 'NO_GEMINI_KEY') {
+        if (res.error && res.error !== 'AI_UNAVAILABLE') {
           return this.fallbackNutritionAnswer(question);
         }
       } catch {

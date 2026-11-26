@@ -4,17 +4,14 @@ import { useNavigate } from 'react-router-dom';
 import { storageService } from '@/domain/services/storageService';
 
 export const WeeklyWeighInAlert: React.FC = () => {
-  const [alertInfo, setAlertInfo] = useState<{ needed: boolean; daysSinceLast: number; lastDate: string | null }>({
-    needed: false,
-    daysSinceLast: 0,
-    lastDate: null,
-  });
+  const [alertInfo, setAlertInfo] = useState(() => storageService.needsWeeklyWeighIn());
   const [isDismissed, setIsDismissed] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const check = storageService.needsWeeklyWeighIn();
-    setAlertInfo(check);
+    const onStorage = () => setAlertInfo(storageService.needsWeeklyWeighIn());
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   if (!alertInfo.needed || isDismissed) return null;

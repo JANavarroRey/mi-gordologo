@@ -1,24 +1,55 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Calendar, Heart, Bell, Share2, UserPlus, CheckCircle2, ShieldCheck, LogOut, KeyRound, Scale, FileUp, ClipboardList, Eye, EyeOff } from 'lucide-react';
+import {
+  Users,
+  Calendar,
+  Heart,
+  Bell,
+  Share2,
+  UserPlus,
+  CheckCircle2,
+  ShieldCheck,
+  LogOut,
+  KeyRound,
+  Scale,
+  FileUp,
+  ClipboardList,
+  ArrowLeft,
+} from 'lucide-react';
 import { storageService } from '@/domain/services/storageService';
 import { backendService } from '@/domain/services/backendService';
+import { adminService } from '@/domain/services/adminService';
 import { authSyncService } from '@/domain/services/authSyncService';
 import { UserSelectionModal } from '@/ui/components/onboarding/UserSelectionModal';
 import { NewUserWizardModal } from '@/ui/components/onboarding/NewUserWizardModal';
 import { HabitsQuestionnaireModal } from '@/ui/components/onboarding/HabitsQuestionnaireModal';
 import { ImportMenuModal } from '@/ui/components/menu/ImportMenuModal';
 import { TutorialModal } from '@/ui/components/tutorial/TutorialModal';
-import { SuperAdminPanel } from '@/ui/components/admin/SuperAdminPanel';
 import { HospitalGuidelinesCard } from '@/ui/components/guidelines/HospitalGuidelinesCard';
 import { assetUrl } from '@/shared/assets';
 import type { FoodIntake, UserProfile } from '@/domain/models/types';
-import { importMenuFromPdf, personalizeFromIntake, type MenuImportResult } from '@/domain/services/menuPersonalizeService';
+import {
+  importMenuFromPdf,
+  personalizeFromIntake,
+  type MenuImportResult,
+} from '@/domain/services/menuPersonalizeService';
 import { formatKcalLabel } from '@/domain/services/calorieEstimateService';
 import { PasswordField } from '@/ui/components/forms/PasswordField';
-import { knownPasswordsStore } from '@/domain/services/knownPasswordsStore';
 
-const WEEKDAY_LABELS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'] as const;
+// El panel de administración solo se descarga cuando el servidor confirma rol admin
+const SuperAdminPanel = lazy(() =>
+  import('@/ui/components/admin/SuperAdminPanel').then((m) => ({ default: m.SuperAdminPanel }))
+);
+
+const WEEKDAY_LABELS = [
+  'Domingo',
+  'Lunes',
+  'Martes',
+  'Miércoles',
+  'Jueves',
+  'Viernes',
+  'Sábado',
+] as const;
 
 export const ProfilePage: React.FC = () => {
   const navigate = useNavigate();
@@ -38,12 +69,12 @@ export const ProfilePage: React.FC = () => {
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<MenuImportResult | null>(null);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
-  const [ownPassword, setOwnPassword] = useState('');
-  const [pwdMsg, setPwdMsg] = useState<string | null>(null);
-  const [knownOwn, setKnownOwn] = useState<string | null>(() =>
-    knownPasswordsStore.get(storageService.getActiveProfile().id)
-  );
-  const [showKnownOwn, setShowKnownOwn] = useState(false);
+
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwdBusy, setPwdBusy] = useState(false);
+  const [pwdMsg, setPwdMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
   const [bodyHeight, setBodyHeight] = useState(() =>
     storageService.getActiveProfile().height > 0 ? String(storageService.getActiveProfile().height) : ''
   );
@@ -56,7 +87,9 @@ export const ProfilePage: React.FC = () => {
   });
   const [bodyMsg, setBodyMsg] = useState<string | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<string>(() => {
-    return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported';
+    return typeof window !== 'undefined' && 'Notification' in window
+      ? Notification.permission
+      : 'unsupported';
   });
 
   useEffect(() => {
@@ -70,31 +103,29 @@ export const ProfilePage: React.FC = () => {
       setBodyHeight(profile.height > 0 ? String(profile.height) : '');
       setBodyAge(profile.age > 0 ? String(profile.age) : '');
       setBodyGender(profile.gender === 'male' || profile.gender === 'female' ? profile.gender : '');
-      setKnownOwn(knownPasswordsStore.get(profile.id));
       if (typeof window !== 'undefined' && 'Notification' in window) {
         setNotificationPermission(Notification.permission);
       }
     };
-    syncFromStorage();
     window.addEventListener('storage', syncFromStorage);
-
-    void (async () => {
-      const st = await backendService.getState();
-      const fromServer =
-        st.knownPassword ||
-        st.authUser?.knownPassword ||
-        st.users?.find((u) => u.id === storageService.getActiveProfile().id)?.knownPassword ||
-        null;
-      if (fromServer) {
-        const id = storageService.getActiveProfile().id;
-        knownPasswordsStore.set(id, fromServer);
-        setKnownOwn(fromServer);
-        setShowKnownOwn(true);
-      }
-    })();
-
     return () => window.removeEventListener('storage', syncFromStorage);
   }, []);
+
+  const isVerifiedAdmin = backendService.isVerifiedAdmin();
+  const isImpersonating = backendService.isImpersonating();
+  const isViewingOwnAdmin = isVerifiedAdmin && !isImpersonating;
+  const isMaria = activeUser.id === 'maria_ignacia';
+  const importedFromPdf = Boolean(activeUser.foodIntake?.importedFromPdf);
+  const displayKcal = storageService.getMenuDisplayKcal(activeUser.id);
+
+  const handleReturnToAdmin = async () => {
+    if (!isVerifiedAdmin) return;
+    authSyncService.cancelPendingPush();
+    const res = await adminService.openAsUser(backendService.getAuthUserId());
+    if (res.ok) {
+      await authSyncService.syncAfterAuth();
+    }
+  };
 
   const handleSaveBodyData = (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,40 +179,35 @@ export const ProfilePage: React.FC = () => {
     window.dispatchEvent(new Event('storage'));
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
+  const handleChangeOwnPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPwdMsg(null);
-    if (ownPassword.length < 6) {
-      setPwdMsg('La contraseña debe tener al menos 6 caracteres.');
+    if (newPassword.length < 6) {
+      setPwdMsg({ text: 'La contraseña debe tener al menos 6 caracteres.', ok: false });
       return;
     }
-    const next = ownPassword;
-    // Guarda en Auth + servidor (para verla siempre en Perfil, no solo en este móvil)
-    const res = await backendService.saveKnownPassword(next, activeUser.id);
-    if (res.ok) {
-      knownPasswordsStore.set(activeUser.id, next);
-      setKnownOwn(res.knownPassword || next);
-      setShowKnownOwn(true);
-      setOwnPassword('');
-      setPwdMsg('Contraseña guardada. Ya la ves arriba con el ojo.');
-    } else {
-      // Fallback: solo Auth local + localStorage
-      const local = await authSyncService.updatePassword(next);
-      if (local.ok) {
-        knownPasswordsStore.set(activeUser.id, next);
-        setKnownOwn(next);
-        setShowKnownOwn(true);
-        setOwnPassword('');
-        setPwdMsg('Contraseña guardada en este móvil.');
-      } else {
-        setPwdMsg(res.error || local.error || 'No se pudo cambiar.');
-      }
+    if (newPassword !== confirmPassword) {
+      setPwdMsg({ text: 'Las contraseñas no coinciden.', ok: false });
+      return;
     }
+    setPwdBusy(true);
+    const res = await backendService.changeOwnPassword(newPassword);
+    if (res.ok) {
+      setNewPassword('');
+      setConfirmPassword('');
+      setPwdMsg({ text: 'Contraseña actualizada correctamente.', ok: true });
+    } else {
+      setPwdMsg({ text: res.error || 'No se pudo cambiar la contraseña.', ok: false });
+    }
+    setPwdBusy(false);
   };
 
   const handleRescale = () => {
     storageService.rescaleMenusToCalories(activeUser.id);
-    setPwdMsg(`Cantidades del menú ajustadas a ${activeUser.targetCalories} kcal.`);
+    setPwdMsg({
+      text: `Cantidades del menú ajustadas a ${activeUser.targetCalories} kcal.`,
+      ok: true,
+    });
     window.dispatchEvent(new Event('storage'));
   };
 
@@ -224,7 +250,6 @@ export const ProfilePage: React.FC = () => {
   const handleRequestNotifications = async () => {
     setNotifMsg(null);
 
-    // Android/Chrome: las notificaciones web requieren HTTPS + gesto de usuario
     if (!window.isSecureContext) {
       setNotifMsg('Las notificaciones solo funcionan en HTTPS (o localhost).');
       return;
@@ -255,7 +280,6 @@ export const ProfilePage: React.FC = () => {
       const body = `Avisos activados. Te recordaremos el pesaje los ${WEEKDAY_LABELS[weighInDay]}.`;
       const icon = assetUrl('logo.svg');
 
-      // En Android PWA es más fiable mostrar vía Service Worker
       const reg = await navigator.serviceWorker?.ready.catch(() => null);
       if (reg?.showNotification) {
         await reg.showNotification(title, { body, icon, badge: icon });
@@ -273,21 +297,15 @@ export const ProfilePage: React.FC = () => {
 
   const handleTestWhatsAppPing = () => {
     const appUrl = `${window.location.origin}${window.location.pathname}#/seguimiento`;
-    const dayName = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][weighInDay];
+    const dayName = WEEKDAY_LABELS[weighInDay];
     const text = `⚖️ *Recordatorio de Mi Gordólogo* para ${activeUser.name}: Hoy es ${dayName} y toca pesaje semanal en ayunas para anotar tu avance en la app 🍏 Entra aquí: ${appUrl}`;
     const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
 
-  const isPepeProfile =
-    storageService.isSuperadmin(activeUser.id) || backendService.isAuthSuperadmin();
-  const isMaria = activeUser.id === 'maria_ignacia';
-  const importedFromPdf = Boolean(activeUser.foodIntake?.importedFromPdf);
-  const displayKcal = storageService.getMenuDisplayKcal(activeUser.id);
-
   return (
     <div className="space-y-4">
-      {/* Tarjeta del Usuario Activo — compacta */}
+      {/* Tarjeta del Usuario Activo */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-700 to-teal-700 text-white p-5 shadow-sm">
         <div className="absolute -right-6 -top-6 w-28 h-28 rounded-full bg-white/10" />
         <div className="absolute -right-2 bottom-2 w-16 h-16 rounded-full bg-white/5" />
@@ -299,33 +317,47 @@ export const ProfilePage: React.FC = () => {
             <h2 className="text-xl font-bold font-display leading-tight truncate">
               {activeUser.name}
             </h2>
-            <p className="text-sm text-emerald-100 mt-0.5">
-              {isPepeProfile
-                ? 'Superadmin · configuración de la familia'
-                : `${activeUser.targetCalories} kcal · ${activeUser.height} cm`}
+            <p className="text-sm text-emerald-100 mt-0.5 truncate">
+              {isViewingOwnAdmin
+                ? 'Administrador · gestión de usuarios y configuración'
+                : `${activeUser.targetCalories} kcal${activeUser.height > 0 ? ` · ${activeUser.height} cm` : ''}`}
             </p>
           </div>
         </div>
-        <div className={`relative mt-4 grid gap-2 ${isPepeProfile ? 'grid-cols-2' : 'grid-cols-1'}`}>
-          <button
-            type="button"
-            onClick={() => setShowUserModal(true)}
-            className="flex items-center justify-center gap-1.5 py-2.5 rounded-2xl bg-white text-emerald-800 text-xs font-bold"
-          >
-            <Users className="w-3.5 h-3.5" />
-            Cambiar perfil
-          </button>
-          {isPepeProfile && (
-          <button
-            type="button"
-            onClick={() => setShowWizardModal(true)}
-            className="flex items-center justify-center gap-1.5 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold border border-white/25"
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            Nuevo perfil
-          </button>
-          )}
-        </div>
+
+        {/* Solo el administrador ve botones de cambiar/crear perfil */}
+        {isVerifiedAdmin && (
+          <div className="relative mt-4 grid grid-cols-2 gap-2">
+            {isImpersonating ? (
+              <button
+                type="button"
+                onClick={() => void handleReturnToAdmin()}
+                className="flex items-center justify-center gap-1.5 py-2.5 rounded-2xl bg-white text-emerald-800 text-xs font-bold"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Volver a Admin
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowUserModal(true)}
+                className="flex items-center justify-center gap-1.5 py-2.5 rounded-2xl bg-white text-emerald-800 text-xs font-bold"
+              >
+                <Users className="w-3.5 h-3.5" />
+                Cambiar perfil
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowWizardModal(true)}
+              className="flex items-center justify-center gap-1.5 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold border border-white/25"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              Nuevo perfil
+            </button>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={() => setShowTutorialModal(true)}
@@ -335,84 +367,69 @@ export const ProfilePage: React.FC = () => {
         </button>
       </div>
 
+      {/* Cuenta, menú y cambio de contraseña propia (sin contraseñas de terceros ni rastros de admin) */}
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-3">
         <div className="flex items-center space-x-2">
           <KeyRound className="w-4 h-4 text-emerald-700" />
-          <h3 className="font-bold text-sm text-neutral-900">Contraseña y menú de {activeUser.name}</h3>
+          <h3 className="font-bold text-sm text-neutral-900">Cuenta y menú de {activeUser.name}</h3>
         </div>
         <p className="text-[11px] text-neutral-500 leading-relaxed">
           {isMaria
             ? `Menú hospitalario (${formatKcalLabel(activeUser.targetCalories)}). Los cambios de platos se guardan para este perfil.`
             : importedFromPdf
               ? `Menú importado desde PDF (~${formatKcalLabel(displayKcal)}/día, estimación). Desayunos y meriendas se mantienen.`
-              : `Menú propio (~${formatKcalLabel(displayKcal)}). Tras el cuestionario, comidas y cenas se adaptan a hábitos.`}
+              : `Menú propio (~${formatKcalLabel(displayKcal)}). Tras el cuestionario, comidas y cenas se adaptan a tus hábitos.`}
         </p>
         {activeUser.email && (
           <p className="text-[11px] text-neutral-600">
             Email: <span className="font-semibold">{activeUser.email}</span>
           </p>
         )}
-        {knownOwn ? (
-          <div className="rounded-xl border-2 border-emerald-500 bg-emerald-50 px-3 py-3 space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-bold text-emerald-900">Tu contraseña</span>
-              <button
-                type="button"
-                onClick={() => setShowKnownOwn((v) => !v)}
-                className="p-1.5 rounded-lg bg-white border border-emerald-200 text-emerald-800"
-                aria-label={showKnownOwn ? 'Ocultar' : 'Ver'}
-              >
-                {showKnownOwn ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
-            </div>
-            <p className="text-lg font-mono break-all text-neutral-900 tracking-wide font-bold">
-              {showKnownOwn ? knownOwn : '••••••••••••'}
-            </p>
+
+        {/* Solo muestra cambio de contraseña propia cuando el usuario está en su propia cuenta */}
+        {!isImpersonating && (
+          <form onSubmit={(e) => void handleChangeOwnPassword(e)} className="space-y-2 pt-1">
+            <label className="block text-[11px] font-bold text-neutral-700">
+              Cambiar mi contraseña
+            </label>
+            <PasswordField
+              value={newPassword}
+              onChange={setNewPassword}
+              minLength={6}
+              placeholder="Nueva contraseña (mín. 6 caracteres)"
+              autoComplete="new-password"
+            />
+            <PasswordField
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              minLength={6}
+              placeholder="Repite la nueva contraseña"
+              autoComplete="new-password"
+            />
             <button
-              type="button"
-              onClick={() => void navigator.clipboard?.writeText(knownOwn)}
-              className="text-[11px] font-bold text-emerald-800 underline"
+              type="submit"
+              disabled={pwdBusy || newPassword.length < 6}
+              className="w-full py-2.5 rounded-xl bg-neutral-900 text-white font-bold text-xs disabled:opacity-40"
             >
-              Copiar
+              {pwdBusy ? 'Guardando…' : 'Actualizar contraseña'}
             </button>
-          </div>
-        ) : (
-          <p className="text-[12px] text-amber-950 bg-amber-50 border border-amber-300 rounded-xl px-3 py-2.5 leading-relaxed font-semibold">
-            Todavía no hay contraseña guardada para mostrar. Escríbela abajo y pulsa el botón negro. Luego
-            aparecerá aquí siempre.
-          </p>
+          </form>
         )}
-        <form onSubmit={(e) => void handleChangePassword(e)} className="space-y-2">
-          <PasswordField
-            value={ownPassword}
-            onChange={setOwnPassword}
-            minLength={6}
-            placeholder="Escribe tu contraseña aquí"
-            autoComplete="new-password"
-          />
-          <button
-            type="submit"
-            className="w-full py-3 rounded-xl bg-neutral-900 text-white font-bold text-sm"
-          >
-            Guardar contraseña (y poder verla)
-          </button>
-        </form>
-        {pwdMsg && /contraseña|clave|verla|actualizada|cambiar|mínimo|pudo/i.test(pwdMsg) && (
+
+        {pwdMsg && (
           <p
             className={`text-[11px] font-semibold rounded-xl px-3 py-2 border ${
-              /no se pudo|debe tener/i.test(pwdMsg)
-                ? 'text-rose-900 bg-rose-50 border-rose-200'
-                : 'text-emerald-900 bg-emerald-50 border-emerald-200'
+              pwdMsg.ok
+                ? 'text-emerald-900 bg-emerald-50 border-emerald-200'
+                : 'text-rose-900 bg-rose-50 border-rose-200'
             }`}
           >
-            {pwdMsg}
+            {pwdMsg.text}
           </p>
         )}
-        <p className="text-[10px] text-neutral-500">
-          «Olvidé mi contraseña» también funciona; el enlace nuevo ya abre la web pública (no localhost).
-        </p>
+
         {!isMaria && (
-          <div className="grid grid-cols-1 gap-2">
+          <div className="grid grid-cols-1 gap-2 pt-1">
             <button
               type="button"
               onClick={() => setShowHabitsModal(true)}
@@ -435,30 +452,29 @@ export const ProfilePage: React.FC = () => {
             </button>
           </div>
         )}
+
         {!isMaria && !importedFromPdf && (
-        <button
-          type="button"
-          onClick={handleRescale}
-          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-emerald-200 text-emerald-900 text-xs font-bold"
-        >
-          <Scale className="w-3.5 h-3.5" />
-          Reescalar cantidades a {activeUser.targetCalories} kcal
-        </button>
+          <button
+            type="button"
+            onClick={handleRescale}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-emerald-200 text-emerald-900 text-xs font-bold"
+          >
+            <Scale className="w-3.5 h-3.5" />
+            Reescalar cantidades a {activeUser.targetCalories} kcal
+          </button>
         )}
+
         <button
           type="button"
           onClick={() => void handleLogout()}
-          className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] font-bold text-neutral-500"
+          className="w-full flex items-center justify-center gap-1.5 py-2 text-[11px] font-bold text-neutral-500 hover:text-rose-700"
         >
           <LogOut className="w-3.5 h-3.5" />
           Cerrar sesión
         </button>
-        {pwdMsg && !/contraseña|clave|verla|actualizada|cambiar|mínimo|pudo/i.test(pwdMsg) && (
-          <p className="text-[11px] text-neutral-600">{pwdMsg}</p>
-        )}
       </div>
 
-      {/* Datos corporales (altura para IMC; solo editable aquí) */}
+      {/* Datos corporales */}
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-3">
         <div className="flex items-center space-x-2">
           <Scale className="w-4 h-4 text-emerald-700" />
@@ -466,7 +482,7 @@ export const ProfilePage: React.FC = () => {
         </div>
         <p className="text-[11px] text-neutral-500 leading-relaxed">
           La <strong>altura</strong> hace falta para calcular el IMC en Progreso. Se guarda por perfil y
-          solo se cambia desde aquí (no desde el pesaje).
+          solo se cambia desde aquí.
         </p>
         <form onSubmit={handleSaveBodyData} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
@@ -519,7 +535,7 @@ export const ProfilePage: React.FC = () => {
           {bodyMsg && <p className="text-[11px] text-neutral-600">{bodyMsg}</p>}
           {(!activeUser.height || activeUser.height < 80) && (
             <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-              Este perfil aún no tiene altura: el IMC en Progreso aparecerá como incompleto hasta que la guardes.
+              Este perfil aún no tiene altura: el IMC en Progreso aparecerá incompleto hasta que la guardes.
             </p>
           )}
         </form>
@@ -533,7 +549,7 @@ export const ProfilePage: React.FC = () => {
             <h3 className="font-bold text-sm text-neutral-900">Raciones por plato</h3>
           </div>
           <p className="text-xs text-neutral-500 mb-2.5 leading-relaxed">
-            Calcula las cantidades de los menús y la lista de compra para una o dos personas (incluyendo a papá).
+            Calcula las cantidades de los menús y la lista de compra para una o dos personas.
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -615,19 +631,20 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {activeUser.id === 'maria_ignacia' && <HospitalGuidelinesCard />}
+      {isMaria && <HospitalGuidelinesCard />}
 
-      {/* Sistema de Alertas y Recordatorios Semanales */}
+      {/* Recordatorios Semanales */}
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-4">
         <div className="flex items-center space-x-2">
           <Bell className="w-5 h-5 text-emerald-600" />
           <div>
             <h3 className="font-bold text-sm text-neutral-900">Día de Pesaje y Entrevista Semanal</h3>
-            <p className="text-[11px] text-neutral-500">Pautado para pesarse en ayunas y recibir el parte de El Gordólogo</p>
+            <p className="text-[11px] text-neutral-500">
+              Pautado para pesarse en ayunas y recibir el parte de El Gordólogo
+            </p>
           </div>
         </div>
 
-        {/* Selector del día de la semana */}
         <div>
           <label className="block text-xs font-bold text-neutral-700 mb-2">
             Elige qué día te pesas cada semana:
@@ -657,12 +674,10 @@ export const ProfilePage: React.FC = () => {
             ))}
           </div>
           <p className="text-[11px] text-neutral-500 mt-2 leading-tight">
-            💡 Ahora tienes configurado el <strong>{WEEKDAY_LABELS[weighInDay]}</strong> por la mañana en ayunas.
-            El hospital suele recomendar jueves; puedes cambiarlo cuando quieras.
+            💡 Configurado el <strong>{WEEKDAY_LABELS[weighInDay]}</strong> por la mañana en ayunas.
           </p>
         </div>
 
-        {/* Acciones directas de recordatorio */}
         <div className="space-y-3 pt-2">
           <div className="flex items-center justify-between p-3 rounded-2xl bg-neutral-50 border border-neutral-200">
             <div className="flex items-center space-x-2">
@@ -692,7 +707,11 @@ export const ProfilePage: React.FC = () => {
               className="p-3 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs transition-colors"
             >
               <Bell className="w-4 h-4" />
-              <span>{notificationPermission === 'granted' ? 'Probar Aviso en Pantalla' : 'Activar Avisos en este Móvil'}</span>
+              <span>
+                {notificationPermission === 'granted'
+                  ? 'Probar Aviso en Pantalla'
+                  : 'Activar Avisos en este Móvil'}
+              </span>
             </button>
 
             <button
@@ -720,51 +739,67 @@ export const ProfilePage: React.FC = () => {
           <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-200/60 flex items-start space-x-2 text-[11px] text-emerald-900 leading-relaxed">
             <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
             <p>
-              <strong>Privado en tu móvil:</strong> los avisos son locales (sin servidor de push). En Android usa Chrome → menú →
-              &quot;Añadir a pantalla de inicio&quot; y activa el permiso desde ahí. Si aparece bloqueado, desbloquéalo en Información del sitio.
+              <strong>Privado en tu móvil:</strong> los avisos son locales. En Android usa Chrome → menú →
+              &quot;Añadir a pantalla de inicio&quot; y activa el permiso desde ahí.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Tarjeta Médica Informativa — solo pauta de María */}
       {isMaria && (
-      <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-2">
-        <div className="flex items-center space-x-2">
-          <Heart className="w-4 h-4 text-rose-500" />
-          <h3 className="font-bold text-xs uppercase tracking-wider text-neutral-700">Pauta Médica de Origen</h3>
+        <div className="bg-white p-5 rounded-3xl shadow-sm border border-neutral-200 space-y-2">
+          <div className="flex items-center space-x-2">
+            <Heart className="w-4 h-4 text-rose-500" />
+            <h3 className="font-bold text-xs uppercase tracking-wider text-neutral-700">
+              Pauta Médica de Origen
+            </h3>
+          </div>
+          <div className="bg-neutral-50 rounded-2xl p-3 text-xs text-neutral-600 space-y-1">
+            <p>🏥 <strong>Hospital Morales Meseguer (Murcia)</strong></p>
+            <p>🥗 Dieta pautada: <strong>1.500 kcal / día</strong> en 5 tomas</p>
+            <p>🎯 Meta: Reducción de masa grasa preservando masa muscular</p>
+          </div>
         </div>
-        <div className="bg-neutral-50 rounded-2xl p-3 text-xs text-neutral-600 space-y-1">
-          <p>🏥 <strong>Hospital Morales Meseguer (Murcia)</strong></p>
-          <p>🥗 Dieta pautada: <strong>1.500 kcal / día</strong> en 5 tomas</p>
-          <p>🎯 Meta: Reducción de masa grasa preservando masa muscular</p>
-        </div>
-      </div>
       )}
 
-      {isPepeProfile && <SuperAdminPanel />}
+      {/* Panel de Administración — montado ÚNICAMENTE en el perfil propio del admin verificado */}
+      {isViewingOwnAdmin && (
+        <Suspense
+          fallback={
+            <div className="bg-white p-5 rounded-3xl border border-neutral-200 text-xs text-neutral-500 text-center">
+              Cargando panel de administración…
+            </div>
+          }
+        >
+          <SuperAdminPanel />
+        </Suspense>
+      )}
 
-      {/* Modales */}
-      <UserSelectionModal
-        isOpen={showUserModal}
-        canDismiss={true}
-        onClose={() => setShowUserModal(false)}
-        onSelectUser={(u) => {
-          setActiveUser(u);
-          setShowUserModal(false);
-          setServings(storageService.getServings(u.id));
-          window.dispatchEvent(new Event('storage'));
-        }}
-      />
+      {/* Modales exclusivos de administrador */}
+      {isVerifiedAdmin && (
+        <>
+          <UserSelectionModal
+            isOpen={showUserModal}
+            canDismiss={true}
+            onClose={() => setShowUserModal(false)}
+            onSelectUser={(u) => {
+              setActiveUser(u);
+              setShowUserModal(false);
+              setServings(storageService.getServings(u.id));
+              window.dispatchEvent(new Event('storage'));
+            }}
+          />
 
-      <NewUserWizardModal
-        isOpen={showWizardModal}
-        onClose={() => setShowWizardModal(false)}
-        onUserCreated={(newProfile) => {
-          setActiveUser(newProfile);
-          window.dispatchEvent(new Event('storage'));
-        }}
-      />
+          <NewUserWizardModal
+            isOpen={showWizardModal}
+            onClose={() => setShowWizardModal(false)}
+            onUserCreated={(newProfile) => {
+              setActiveUser(newProfile);
+              window.dispatchEvent(new Event('storage'));
+            }}
+          />
+        </>
+      )}
 
       <HabitsQuestionnaireModal
         isOpen={showHabitsModal}
@@ -803,10 +838,7 @@ export const ProfilePage: React.FC = () => {
         }}
       />
 
-      <TutorialModal
-        isOpen={showTutorialModal}
-        onClose={() => setShowTutorialModal(false)}
-      />
+      <TutorialModal isOpen={showTutorialModal} onClose={() => setShowTutorialModal(false)} />
     </div>
   );
 };

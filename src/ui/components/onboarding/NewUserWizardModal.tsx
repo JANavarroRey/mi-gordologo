@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { X, Check, UserPlus } from 'lucide-react';
-import { storageService } from '@/domain/services/storageService';
 import { backendService } from '@/domain/services/backendService';
+import { adminService } from '@/domain/services/adminService';
+import { authSyncService } from '@/domain/services/authSyncService';
+import { storageService } from '@/domain/services/storageService';
 import { getHospitalMenuSeed } from '@/data/hospitalMenuSeed';
 import { computeTargetCalories, scaleWeekMenus } from '@/domain/services/menuScaleService';
-import type { UserProfile } from '@/domain/models/types';
+import type { BodyMeasurement, UserProfile } from '@/domain/models/types';
 import { PasswordField, fieldInputClass } from '@/ui/components/forms/PasswordField';
 
 interface Props {
@@ -21,13 +23,13 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
   const [gender, setGender] = useState<'female' | 'male'>('female');
   const [activityLevel, setActivityLevel] = useState<'sedentary' | 'moderate' | 'active'>('moderate');
   const [goal, setGoal] = useState<'lose_weight' | 'maintain'>('lose_weight');
-  const [weighInDay, setWeighInDay] = useState(4); // Jueves por defecto
+  const [weighInDay, setWeighInDay] = useState(4);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  if (!isOpen || !backendService.isVerifiedAdmin()) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,37 +45,57 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
     setBusy(true);
     setError(null);
 
-    const created = storageService.createNewProfileWithIntake({
-      name: name.trim(),
-      age: parseInt(age, 10) || 40,
-      height: parseInt(height, 10) || 175,
-      weight: parseFloat(weight) || 75,
-      gender,
-      activityLevel,
-      goal,
-      linkedMenuUserId: null,
-      weighInDay,
-    });
-
+    const parsedAge = parseInt(age, 10) || 40;
+    const parsedHeight = parseInt(height, 10) || 175;
+    const parsedWeight = parseFloat(weight) || 75;
     const targetCalories = computeTargetCalories({
-      age: created.age,
-      height: created.height,
-      weight: parseFloat(weight) || 75,
+      age: parsedAge,
+      height: parsedHeight,
+      weight: parsedWeight,
       gender,
       activityLevel,
       goal,
     });
-    // Todos parten del mismo ciclo hospitalario 1.500 kcal; la encuesta posterior lo personaliza.
+    const genderOffset = gender === 'female' ? -161 : 5;
+    const bmr = Math.round(10 * parsedWeight + 6.25 * parsedHeight - 5 * parsedAge + genderOffset);
+    const newId = `usr_${Date.now()}`;
     const weeks = scaleWeekMenus(getHospitalMenuSeed(), 1500);
-    const measurements = storageService.getMeasurements(created.id);
+    const measurements: BodyMeasurement[] =
+      parsedWeight > 0
+        ? [
+            {
+              id: `m_${Date.now()}`,
+              userId: newId,
+              date: new Date().toISOString().split('T')[0],
+              weight: parsedWeight,
+              bmi: parseFloat(
+                (parsedWeight / ((parsedHeight / 100) * (parsedHeight / 100))).toFixed(1)
+              ),
+              fatMass: null,
+              fatPercent: null,
+              freeFatMass: null,
+              leanMass: null,
+              skeletalMuscle: null,
+              totalWater: null,
+              waterPercent: null,
+              boneMinerals: null,
+              proteins: null,
+              visceralFat: null,
+              metabolicRate: null,
+              metabolicAge: parsedAge,
+              basalMetabolism: bmr,
+            },
+          ]
+        : [];
 
-    const res = await backendService.createUser({
-      id: created.id,
-      name: created.name,
+    // Primero persistimos en servidor (sin contaminar localStorage si falla)
+    const res = await adminService.createUser({
+      id: newId,
+      name: name.trim(),
       email: email.trim().toLowerCase(),
       password,
-      age: created.age,
-      height: created.height,
+      age: parsedAge,
+      height: parsedHeight,
       targetCalories,
       gender,
       activityLevel,
@@ -82,15 +104,24 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
       weeks,
       measurements,
     });
-    if (!res.ok) {
-      setError(res.error || 'No se pudo guardar el perfil en el servidor.');
+
+    if (!res.ok || !res.user) {
+      setError(res.error || 'No se pudo crear el perfil en el servidor.');
       setBusy(false);
       return;
     }
-    await backendService.openAsUser(created.id);
-    storageService.setActiveUserId(created.id);
 
-    onUserCreated(created);
+    await adminService.openAsUser(res.user.id);
+    await authSyncService.syncAfterAuth();
+    const active = storageService.getActiveProfile();
+
+    setName('');
+    setAge('');
+    setHeight('');
+    setWeight('');
+    setEmail('');
+    setPassword('');
+    onUserCreated(active);
     onClose();
     setBusy(false);
   };
@@ -107,10 +138,11 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
               <h3 className="font-bold text-base font-display text-neutral-900 leading-tight">
                 Crear Nuevo Perfil
               </h3>
-              <p className="text-[11px] text-neutral-500">Toma de datos y personalización</p>
+              <p className="text-[11px] text-neutral-500">Alta directa aprobada por administrador</p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1 rounded-full text-neutral-400 hover:text-neutral-600"
           >
@@ -118,14 +150,13 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          {/* Nombre y Edad */}
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3.5">
           <div>
             <label className="block text-xs font-bold text-neutral-700 mb-1">Nombre *</label>
             <input
               type="text"
               required
-              placeholder="Ej: José Antonio, Carmen..."
+              placeholder="Ej: Carmen, Antonio…"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full text-xs p-3 rounded-xl border border-neutral-200 focus:ring-2 focus:ring-primary-500 font-medium"
@@ -166,10 +197,9 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
             </div>
           </div>
 
-          {/* Sexo biológico para cálculo de gasto metabólico */}
           <div>
             <label className="block text-xs font-bold text-neutral-700 mb-1.5">
-              Sexo biológico (para fórmula metabólica exacta)
+              Sexo biológico (para fórmula metabólica)
             </label>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -181,7 +211,7 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
                     : 'bg-neutral-50 border-neutral-200 text-neutral-600'
                 }`}
               >
-                👩 Mujer (-161 kcal)
+                Mujer
               </button>
               <button
                 type="button"
@@ -192,12 +222,11 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
                     : 'bg-neutral-50 border-neutral-200 text-neutral-600'
                 }`}
               >
-                👨 Hombre (+5 kcal)
+                Hombre
               </button>
             </div>
           </div>
 
-          {/* Nivel de actividad */}
           <div>
             <label className="block text-xs font-bold text-neutral-700 mb-1.5">Actividad física diaria</label>
             <div className="grid grid-cols-3 gap-1.5">
@@ -212,13 +241,12 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
                       : 'bg-neutral-50 border-neutral-200 text-neutral-600'
                   }`}
                 >
-                  {lvl === 'sedentary' ? '🚶 Sedentario' : lvl === 'moderate' ? '🏃 Moderado' : '⚡ Activo'}
+                  {lvl === 'sedentary' ? 'Sedentario' : lvl === 'moderate' ? 'Moderado' : 'Activo'}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Objetivo */}
           <div>
             <label className="block text-xs font-bold text-neutral-700 mb-1.5">Objetivo</label>
             <div className="grid grid-cols-2 gap-2">
@@ -231,7 +259,7 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
                     : 'bg-neutral-50 border-neutral-200 text-neutral-600'
                 }`}
               >
-                📉 Perder Grasa
+                Perder Grasa
               </button>
               <button
                 type="button"
@@ -242,22 +270,21 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
                     : 'bg-neutral-50 border-neutral-200 text-neutral-600'
                 }`}
               >
-                ⚖️ Mantener Salud
+                Mantener Salud
               </button>
             </div>
           </div>
 
-          {/* Día de pesaje preferido */}
           <div>
             <label className="block text-xs font-bold text-neutral-700 mb-1.5">
-              Día de pesaje y entrevista semanal
+              Día de pesaje semanal
             </label>
             <div className="grid grid-cols-4 sm:grid-cols-7 gap-1">
               {[
                 { id: 1, label: 'L' },
                 { id: 2, label: 'M' },
                 { id: 3, label: 'X' },
-                { id: 4, label: 'J ⭐' },
+                { id: 4, label: 'J' },
                 { id: 5, label: 'V' },
                 { id: 6, label: 'S' },
                 { id: 0, label: 'D' },
@@ -276,11 +303,10 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
                 </button>
               ))}
             </div>
-            <p className="text-[10px] text-neutral-500 mt-1">Recomendado: <strong>Jueves por la mañana</strong>.</p>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-neutral-700 mb-1">Email (login)</label>
+            <label className="block text-xs font-bold text-neutral-700 mb-1">Email (acceso)</label>
             <input
               type="email"
               required
@@ -299,11 +325,15 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
               autoComplete="new-password"
             />
             <p className="text-[10px] text-neutral-500 mt-1">
-              Se crea ya aprobado (alta familiar). También pueden registrarse solos y tú los apruebas.
+              Se crea ya aprobado y su contraseña queda cifrada en tu bóveda de administrador.
             </p>
           </div>
 
-          {error && <p className="text-[11px] text-rose-700">{error}</p>}
+          {error && (
+            <p className="text-[11px] text-rose-800 bg-rose-50 border border-rose-200 rounded-xl p-2">
+              {error}
+            </p>
+          )}
 
           <div className="flex space-x-2 pt-2 border-t border-neutral-100">
             <button
@@ -319,7 +349,7 @@ export const NewUserWizardModal: React.FC<Props> = ({ isOpen, onClose, onUserCre
               className="flex-1 py-2.5 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 shadow-sm flex items-center justify-center space-x-1 disabled:opacity-50"
             >
               <Check className="w-4 h-4" />
-              <span>Guardar Perfil</span>
+              <span>{busy ? 'Guardando…' : 'Guardar Perfil'}</span>
             </button>
           </div>
         </form>

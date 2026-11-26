@@ -70,7 +70,7 @@ export const HabitsQuestionnaireModal: React.FC<Props> = ({
           <div>
             <h3 className="font-bold text-base text-neutral-900">Hábitos de {personName}</h3>
             <p className="text-[11px] text-neutral-500 mt-0.5">
-              Para adaptar comidas y cenas. No se aplica al menú hospitalario de María.
+              Para adaptar comidas y cenas a tus gustos y horarios habituales.
             </p>
           </div>
           <button type="button" onClick={onClose} className="p-1 text-neutral-400" aria-label="Cerrar">

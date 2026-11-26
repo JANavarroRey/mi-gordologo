@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Send, Sparkles, MessageCircle } from 'lucide-react';
 import { geminiService } from '@/domain/services/geminiService';
-import { backendService } from '@/domain/services/backendService';
 import { storageService } from '@/domain/services/storageService';
 
 interface Props {
@@ -22,35 +21,20 @@ const QUICK_QUESTIONS = [
 ];
 
 export const NutritionChatModal: React.FC<Props> = ({ isOpen, onClose }) => {
-  const [hasGemini, setHasGemini] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const kcal = storageService.getActiveProfile().targetCalories || 1500;
+    return [
+      {
+        role: 'assistant',
+        text: `El Gordólogo. Pregunta lo que quieras sobre tu dieta de ${kcal} kcal: claro, directo y sin rodeos.`,
+      },
+    ];
+  });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [keyboardPad, setKeyboardPad] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    let cancelled = false;
-    void backendService.status().then((res) => {
-      if (cancelled) return;
-      const on = Boolean(res.hasGemini);
-      const kcal = storageService.getActiveProfile().targetCalories || 1500;
-      setHasGemini(on);
-      setMessages([
-        {
-          role: 'assistant',
-          text: on
-            ? `El Gordólogo. Pregunta lo que quieras sobre tu dieta de ${kcal} kcal: claro, sin tecnicismos y sin teatro.`
-            : `El Gordólogo. Te oriento con las reglas de la dieta (${kcal} kcal). Cuando esté la IA, las respuestas serán más precisas.`,
-        },
-      ]);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || typeof window === 'undefined' || !window.visualViewport) return;
@@ -104,7 +88,7 @@ export const NutritionChatModal: React.FC<Props> = ({ isOpen, onClose }) => {
             <MessageCircle className="w-5 h-5 text-emerald-700" />
             <div>
               <h2 className="text-sm font-extrabold text-neutral-900">Pregunta al Gordólogo</h2>
-              <p className="text-[10px] text-neutral-500">{hasGemini ? 'IA Gemini activa' : 'Modo dieta (IA aún no activada)'}</p>
+              <p className="text-[10px] text-neutral-500">Asistente nutricional personalizado</p>
             </div>
           </div>
           <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-neutral-100" aria-label="Cerrar">

@@ -27,69 +27,43 @@ npm run build
 npm run preview
 ```
 
-## Auth: registro público + aprobación + email (gratis)
+## Auth v3: registro público + aprobación estricta + bóveda cifrada + recuperación universal (gratis)
 
-La app usa **Supabase Auth** (email/contraseña). Cualquiera con la URL puede **crear cuenta**; queda en estado `pending` hasta que un **superadmin** la apruebe en **Mi Perfil → Superadmin**.
+La app usa **Supabase Auth** (email/contraseña) con control de acceso en la Edge Function `gordologo`. Cualquiera con la URL puede **solicitar cuenta**; queda en estado `pending` y el administrador (`jose.navarrorey@gmail.com`) recibe aviso por email para aprobarla o rechazarla desde **Mi Perfil → Panel de Administración**.
 
-La recuperación de contraseña usa el flujo nativo (`Olvidé mi contraseña` → email → `#/restablecer-clave`).
+La recuperación de contraseña funciona con **cualquier email** (Gmail, Hotmail, Outlook, Yahoo, iCloud…) mediante **código OTP de 6 dígitos** (15 min, máx. 5 intentos) + enlace directo inmune a Hotmail Safe Links, enviado gratis por Gmail SMTP.
 
-### 1. SQL y Edge Function
+### 1. SQL, Secretos y Edge Function
 
-1. Ejecuta en el SQL Editor (en orden si el proyecto es nuevo):
-   - `supabase/schema.sql` (o `schema_users.sql` si ya existía)
-   - **`supabase/schema_auth_v2.sql`** (email, `auth_user_id`, `status`, trigger de alta, `app_acting`)
-2. Redeploy la función:
+1. Ejecuta en el SQL Editor de Supabase (en orden si el proyecto es nuevo; en uno existente basta con `schema_auth_v3.sql`):
+   - `supabase/schema.sql`
+   - `supabase/schema_auth_v2.sql`
+   - **`supabase/schema_auth_v3.sql`** (bóveda AES-256-GCM, códigos OTP, rate limiting, cierre RLS en `family_snapshots` y anclaje del rol `superadmin` a `jose.navarrorey@gmail.com`)
+2. (Recomendado) Define una clave maestra dedicada para la bóveda cifrada y el email admin en Supabase Secrets:
 
 ```bash
-supabase functions deploy gordologo
+npx supabase secrets set ADMIN_EMAIL=jose.navarrorey@gmail.com PASSWORD_VAULT_KEY="$(openssl rand -base64 32)" --project-ref nxrivvdxknfoqcjzoyeb
 ```
 
-### 2. Auth en el Dashboard de Supabase
+3. Despliega la Edge Function modular:
 
-1. **Authentication → Providers**: Email habilitado.
-2. **Confirm email**: recomendado ON (si usas SMTP real).
-3. **URL configuration**:
-   - Site URL: la URL de GitHub Pages (o `http://localhost:5173` en pruebas).
-   - Redirect URLs (añade ambas):
-     - `http://localhost:5173/#/restablecer-clave`
-     - `https://TU_USUARIO.github.io/TU_REPO/#/restablecer-clave`
-     - también la raíz del sitio sin hash, por si Auth redirige ahí.
-
-### 3. Email de recuperación gratis (Gmail → Gmail/Hotmail/etc.)
-
-**No hace falta Resend ni comprar dominio.** La app envía el enlace de “olvidé mi contraseña” con el **Gmail del administrador** (SMTP + contraseña de aplicación de Google).
-
-1. En tu cuenta Google: **Seguridad** → activa **Verificación en 2 pasos** → **Contraseñas de aplicaciones** → crear una para «Correo» (16 caracteres).
-2. En la app, entra como admin → **Mi Perfil → Superadmin** → bloque **Email de recuperación**:
-   - tu Gmail
-   - la contraseña de aplicación
-3. Guarda. A partir de ahí, cualquiera (Gmail, Hotmail, Outlook…) puede usar “Olvidé mi contraseña”.
-
-Si el email falla, el admin puede pulsar **Generar contraseña temporal** junto al usuario y pasársela a mano.
-
-### 4. Primera vez en la app
-
-1. Secrets / `.env`: `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` (**nunca** la clave Gemini ni la service role en el cliente).
-2. Abre la app: pantalla **Primer administrador** (email + contraseña mín. 8).
-3. Entra y pega la clave Gemini en **Mi Perfil → Superadmin**.
-4. Comparte la URL: la gente se registra sola; tú apruebas en la cola de pendientes.
-
-### 5. Migrar Pepe / María ya existentes
-
-Si ya tenías filas `pepe` / `maria_ignacia` sin Auth:
-
-1. Crea el usuario en **Authentication → Users** (o usa «Primer administrador» en un entorno limpio).
-2. Vincula con el helper SQL de `schema_auth_v2.sql`:
-
-```sql
-select public.link_app_user_to_auth(
-  'pepe',
-  'UUID-DEL-AUTH-USER',
-  'tu@email.com',
-  'approved',
-  'superadmin'
-);
+```bash
+npx supabase functions deploy gordologo --project-ref nxrivvdxknfoqcjzoyeb
 ```
+
+### 2. Email de recuperación gratuito (Gmail SMTP → cualquier destino)
+
+**No hace falta Resend ni comprar dominio.** La app envía correos con el **Gmail del administrador** (SMTP con contraseña de aplicación de Google, cifrada en BD con AES-256-GCM), con SPF/DKIM/DMARC alineados para entregar en bandeja de entrada de Gmail, Hotmail, Outlook, Yahoo e iCloud:
+
+1. En tu cuenta Google: **Seguridad** → activa **Verificación en 2 pasos** → **Contraseñas de aplicaciones** → crea una para «Correo» (16 caracteres).
+2. Entra como administrador (`jose.navarrorey@gmail.com`) → **Mi Perfil → Panel de Administración → Correo de recuperación**.
+3. Guarda tu Gmail completo y la contraseña de aplicación de 16 caracteres, y pulsa **Probar** hacia una cuenta Gmail y una Hotmail/Outlook para confirmar entrega.
+
+### 3. Seguridad y aislamiento de usuarios
+
+- Los usuarios `member` nunca ven el panel de administración (cargado en *chunk lazy* exclusivo del admin), ni contraseñas ajenas, ni ninguna mención a la clave API de Google Gemini.
+- Nunca se guardan contraseñas en `localStorage`; el administrador consulta la bóveda descifrada únicamente en memoria desde su sesión verificada.
+- Al cerrar sesión se purgan todos los datos de `localStorage` del usuario anterior.
 
 ## IA Gemini (una sola clave, superadmin)
 

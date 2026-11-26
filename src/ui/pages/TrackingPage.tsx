@@ -107,12 +107,15 @@ const getBmiCategory = (bmi: number) => {
 };
 
 export const TrackingPage: React.FC = () => {
-  const [measurements, setMeasurements] = useState<BodyMeasurement[]>([]);
+  const [measurements, setMeasurements] = useState<BodyMeasurement[]>(() =>
+    storageService.getMeasurements()
+  );
   const [showAddForm, setShowAddForm] = useState(false);
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeUser, setActiveUser] = useState(() => storageService.getActiveProfile());
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('all');
+  const [todayDateStr] = useState(() => toLocalDateStr(new Date()));
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState(() => toLocalDateStr(new Date()));
 
@@ -138,7 +141,6 @@ export const TrackingPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
     const onStorage = () => loadData();
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -278,7 +280,7 @@ export const TrackingPage: React.FC = () => {
     setChartPeriod(period);
     if (period === 'custom' && !customFrom && measurements.length > 0) {
       setCustomFrom(measurements[0].date);
-      setCustomTo(toLocalDateStr(new Date()));
+      setCustomTo(todayDateStr);
     }
   };
 

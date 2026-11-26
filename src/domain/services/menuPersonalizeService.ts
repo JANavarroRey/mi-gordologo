@@ -20,8 +20,8 @@ function friendlyError(raw?: string): string {
   if (/acci[oó]n desconocida/.test(t)) {
     return 'El servidor aún no tiene esta función. Prueba de nuevo en un minuto; si sigue igual, recarga la app.';
   }
-  if (t.includes('no_gemini_key') || t.includes('gemini')) {
-    return 'Falta la clave de IA o está saturada. Revisa Superadmin o prueba más tarde.';
+  if (t.includes('ai_unavailable') || t.includes('no_gemini_key') || t.includes('gemini')) {
+    return 'El asistente inteligente no está disponible ahora mismo. Inténtalo de nuevo más tarde.';
   }
   return raw || 'No se pudo adaptar el menú.';
 }
@@ -231,7 +231,12 @@ async function requestAdaptedMenu(intake: FoodIntake): Promise<{ lunches: RawMea
   const primary = await backendService.personalizeMenu(intake);
   const parsed = parseMenuPayload(primary);
   if (primary.ok && parsed) return parsed;
-  if (primary.error && !/acci[oó]n desconocida/i.test(primary.error) && primary.error !== 'NO_BACKEND') {
+  if (
+    primary.error &&
+    !/acci[oó]n desconocida/i.test(primary.error) &&
+    primary.error !== 'NO_BACKEND' &&
+    primary.error !== 'AI_UNAVAILABLE'
+  ) {
     throw new Error(friendlyError(primary.error));
   }
   return localMenuFromIntake(intake);

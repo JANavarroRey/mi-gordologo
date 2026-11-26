@@ -1,8 +1,10 @@
 import { getAccessToken, getSupabase, isSupabaseConfigured } from './supabaseClient';
+import { storageService } from './storageService';
 
 const AUTH_USER_KEY = 'migordologo_auth_user_id';
 const AUTH_STATUS_KEY = 'migordologo_auth_status';
-const AUTH_ROLE_KEY = 'migordologo_auth_role';
+const AUTH_IS_ADMIN_KEY = 'migordologo_auth_is_admin';
+const AUTH_PENDING_COUNT_KEY = 'migordologo_auth_pending_count';
 
 function getEnv() {
   const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() || '';
@@ -25,24 +27,19 @@ export type RemoteUser = {
   linkedMenuUserId?: string | null;
   createdAt?: string;
   settings?: Record<string, unknown>;
-  knownPassword?: string | null;
 };
 
 export type GordologoResponse = {
   ok: boolean;
   error?: string;
   backend?: boolean;
-  hasAdmin?: boolean;
-  hasUsers?: boolean;
   needsBootstrap?: boolean;
-  hasGemini?: boolean;
-  hasMailSmtp?: boolean;
-  mailSmtpUser?: string | null;
+  isAdmin?: boolean;
+  pendingCount?: number;
+  needsVaultSync?: boolean;
   tempPassword?: string;
-  knownPassword?: string | null;
   pending?: boolean;
   status?: string;
-  token?: string;
   text?: string;
   message?: string;
   recipeName?: string;
@@ -57,8 +54,14 @@ export type GordologoResponse = {
   menusEdited?: boolean;
   menusUpdatedAt?: string | null;
   measurements?: unknown;
-  lunches?: Array<{ recipeName?: string; items?: Array<{ name?: string; quantity?: string; notes?: string | null }> }>;
-  dinners?: Array<{ recipeName?: string; items?: Array<{ name?: string; quantity?: string; notes?: string | null }> }>;
+  lunches?: Array<{
+    recipeName?: string;
+    items?: Array<{ name?: string; quantity?: string; notes?: string | null }>;
+  }>;
+  dinners?: Array<{
+    recipeName?: string;
+    items?: Array<{ name?: string; quantity?: string; notes?: string | null }>;
+  }>;
   estimatedDailyKcal?: number;
   needsSignIn?: boolean;
 };
@@ -86,34 +89,23 @@ export const backendService = {
     else localStorage.removeItem(AUTH_STATUS_KEY);
   },
 
-  getAuthRole(): string {
-    return localStorage.getItem(AUTH_ROLE_KEY) || '';
+  setVerifiedAdmin(isAdmin: boolean): void {
+    if (isAdmin) localStorage.setItem(AUTH_IS_ADMIN_KEY, '1');
+    else localStorage.removeItem(AUTH_IS_ADMIN_KEY);
   },
 
-  setAuthRole(role: string | null): void {
-    if (role) localStorage.setItem(AUTH_ROLE_KEY, role);
-    else localStorage.removeItem(AUTH_ROLE_KEY);
+  /** Solo true si el servidor confirmó rol superadmin + email administrador + aprobado. */
+  isVerifiedAdmin(): boolean {
+    return localStorage.getItem(AUTH_IS_ADMIN_KEY) === '1' && this.isApproved();
   },
 
-  isAuthSuperadmin(): boolean {
-    return this.getAuthRole() === 'superadmin' || this.getAuthUserId() === 'pepe';
+  getPendingCount(): number {
+    return parseInt(localStorage.getItem(AUTH_PENDING_COUNT_KEY) || '0', 10) || 0;
   },
 
-  /** @deprecated Token custom eliminado; la sesión vive en Supabase Auth. */
-  getUserToken(): string {
-    return '';
-  },
-
-  setUserToken(_token: string | null): void {
-    // no-op (compat)
-  },
-
-  getAdminToken(): string {
-    return '';
-  },
-
-  setAdminToken(_token: string | null): void {
-    // no-op
+  setPendingCount(count: number): void {
+    if (count > 0) localStorage.setItem(AUTH_PENDING_COUNT_KEY, String(count));
+    else localStorage.removeItem(AUTH_PENDING_COUNT_KEY);
   },
 
   isLoggedIn(): boolean {
@@ -124,13 +116,23 @@ export const backendService = {
     return this.getAuthStatus() === 'approved';
   },
 
+  isImpersonating(): boolean {
+    const authId = this.getAuthUserId();
+    const activeId = storageService.getActiveUserId();
+    return this.isVerifiedAdmin() && Boolean(authId) && Boolean(activeId) && authId !== activeId;
+  },
+
   async hasActiveSession(): Promise<boolean> {
     const token = await getAccessToken();
     return Boolean(token);
   },
 
-  isSuperadminSession(): boolean {
-    return this.isAuthSuperadmin() && Boolean(this.getAuthUserId());
+  clearAuthFlags(): void {
+    this.setAuthUserId(null);
+    this.setAuthStatus(null);
+    this.setVerifiedAdmin(false);
+    this.setPendingCount(0);
+    localStorage.removeItem('migordologo_auth_role');
   },
 
   async call(body: Record<string, unknown>): Promise<GordologoResponse> {
@@ -145,16 +147,19 @@ export const backendService = {
       Authorization: `Bearer ${accessToken || anon}`,
     };
 
-    const res = await fetch(`${url.replace(/\/$/, '')}/functions/v1/gordologo`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
     try {
-      const data = (await res.json()) as GordologoResponse;
-      return data;
+      const res = await fetch(`${url.replace(/\/$/, '')}/functions/v1/gordologo`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      try {
+        return (await res.json()) as GordologoResponse;
+      } catch {
+        return { ok: false, error: `HTTP ${res.status}` };
+      }
     } catch {
-      return { ok: false, error: `HTTP ${res.status}` };
+      return { ok: false, error: 'Sin conexión con el servidor.' };
     }
   },
 
@@ -162,8 +167,12 @@ export const backendService = {
     return this.call({ action: 'status' });
   },
 
-  bootstrapAdmin(email: string, password: string, name: string, extra?: Record<string, unknown>) {
-    return this.call({ action: 'bootstrapAdmin', email, password, name, ...extra });
+  bootstrapAdmin(email: string, password: string, name: string) {
+    return this.call({ action: 'bootstrapAdmin', email, password, name });
+  },
+
+  register(name: string, email: string, password: string) {
+    return this.call({ action: 'register', name, email, password });
   },
 
   getMyProfile() {
@@ -171,28 +180,13 @@ export const backendService = {
   },
 
   async logout() {
-    await this.call({ action: 'logout' });
+    const { authSyncService } = await import('./authSyncService');
+    authSyncService.cancelPendingPush();
+    await this.call({ action: 'logout' }).catch(() => null);
     const sb = getSupabase();
-    if (sb) await sb.auth.signOut();
-    this.setAuthUserId(null);
-    this.setAuthStatus(null);
-    this.setAuthRole(null);
-  },
-
-  openAsUser(targetUserId: string) {
-    return this.call({ action: 'openAsUser', targetUserId });
-  },
-
-  createUser(body: Record<string, unknown>) {
-    return this.call({ action: 'createUser', ...body });
-  },
-
-  setUserStatus(userId: string, status: 'approved' | 'rejected' | 'pending') {
-    return this.call({ action: 'setUserStatus', userId, status });
-  },
-
-  listPendingUsers() {
-    return this.call({ action: 'listPendingUsers' });
+    if (sb) await sb.auth.signOut().catch(() => null);
+    this.clearAuthFlags();
+    storageService.clearSessionData();
   },
 
   updateProfile(body: Record<string, unknown>) {
@@ -211,33 +205,20 @@ export const backendService = {
     return this.call({ action: 'saveMeasurements', measurements, userId });
   },
 
-  setGeminiKey(apiKey: string) {
-    return this.call({ action: 'setGeminiKey', apiKey });
+  requestPasswordReset(email: string) {
+    return this.call({ action: 'requestPasswordReset', email });
   },
 
-  setMailSmtp(smtpUser: string, smtpPass: string, fromName?: string) {
-    return this.call({ action: 'setMailSmtp', smtpUser, smtpPass, fromName });
+  confirmPasswordReset(email: string, code: string, newPassword: string) {
+    return this.call({ action: 'confirmPasswordReset', email, code, newPassword });
   },
 
-  requestPasswordReset(email: string, redirectTo: string) {
-    return this.call({ action: 'requestPasswordReset', email, redirectTo });
+  changeOwnPassword(password: string) {
+    return this.call({ action: 'changeOwnPassword', password });
   },
 
-  adminResetPassword(userId: string, password?: string) {
-    return this.call({
-      action: password ? 'adminSetPassword' : 'adminResetPassword',
-      userId,
-      ...(password ? { password } : {}),
-    });
-  },
-
-  /** Guarda (y actualiza Auth) la contraseña para poder verla en Perfil. */
-  saveKnownPassword(password: string, userId?: string) {
-    return this.call({
-      action: 'saveKnownPassword',
-      password,
-      ...(userId ? { userId } : {}),
-    });
+  syncOwnPasswordVault(password: string) {
+    return this.call({ action: 'syncOwnPasswordVault', password });
   },
 
   personalizeMenu(intake: unknown) {

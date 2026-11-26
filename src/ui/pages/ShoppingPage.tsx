@@ -22,11 +22,14 @@ const WEEK_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 export const ShoppingPage: React.FC = () => {
   const [selectedWeek, setSelectedWeek] = useState(() => storageService.getCurrentWeekIndex() + 1);
   const [servings, setServings] = useState(storageService.getServings());
-  const [checkedMap, setCheckedMap] = useState<Record<string, boolean>>({});
-  const [customItems, setCustomItems] = useState<{ id: string; name: string }[]>([]);
+  const [checkedMap, setCheckedMap] = useState<Record<string, boolean>>(() =>
+    storageService.getShoppingChecked(storageService.getCurrentWeekIndex() + 1)
+  );
+  const [customItems, setCustomItems] = useState<{ id: string; name: string }[]>(() =>
+    storageService.getCustomShoppingItems(storageService.getCurrentWeekIndex() + 1)
+  );
   const [newCustomText, setNewCustomText] = useState('');
   const [menus, setMenus] = useState(() => storageService.getMenus());
-  const [menuTick, setMenuTick] = useState(0);
 
   useEffect(() => {
     const sync = () => {
@@ -34,18 +37,22 @@ export const ShoppingPage: React.FC = () => {
       setServings(storageService.getServings());
       setCheckedMap(storageService.getShoppingChecked(selectedWeek));
       setCustomItems(storageService.getCustomShoppingItems(selectedWeek));
-      setMenuTick((t) => t + 1);
     };
-    sync();
     window.addEventListener('storage', sync);
     return () => window.removeEventListener('storage', sync);
   }, [selectedWeek]);
+
+  const handleSelectWeek = (weekNum: number) => {
+    setSelectedWeek(weekNum);
+    setCheckedMap(storageService.getShoppingChecked(weekNum));
+    setCustomItems(storageService.getCustomShoppingItems(weekNum));
+  };
 
   const currentPresetItems = useMemo(() => {
     const week = menus[selectedWeek - 1];
     if (!week) return [];
     return buildShoppingListFromWeek(week);
-  }, [menus, selectedWeek, menuTick]);
+  }, [menus, selectedWeek]);
 
   const toggleCheck = (id: string) => {
     const next = { ...checkedMap, [id]: !checkedMap[id] };
@@ -141,7 +148,7 @@ export const ShoppingPage: React.FC = () => {
           {WEEK_NUMBERS.map((num) => (
             <button
               key={num}
-              onClick={() => setSelectedWeek(num)}
+              onClick={() => handleSelectWeek(num)}
               className={`py-1.5 text-xs font-bold rounded-xl transition-all ${
                 selectedWeek === num
                   ? 'bg-primary-600 text-white shadow-sm'

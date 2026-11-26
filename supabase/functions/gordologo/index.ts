@@ -1,336 +1,38 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
-
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type, x-admin-token, x-user-token',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}
-
-function serviceClient() {
-  const url = Deno.env.get('SUPABASE_URL') ?? '';
-  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${key}`, apikey: key } },
-  });
-}
-
-function normalizeGeminiKey(raw: string): string {
-  return String(raw || '')
-    .trim()
-    .replace(/^["']+|["']+$/g, '')
-    .replace(/\s+/g, '');
-}
-
-function isLikelyGeminiKey(apiKey: string): boolean {
-  if (apiKey.length < 20 || apiKey.length > 512) return false;
-  return apiKey.startsWith('AIza') || apiKey.startsWith('AQ.');
-}
-
-type UserRow = {
-  id: string;
-  name: string;
-  role: string;
-  email: string | null;
-  auth_user_id: string | null;
-  status: string;
-  age: number;
-  height: number;
-  target_calories: number;
-  gender: string | null;
-  activity_level: string | null;
-  goal: string | null;
-  settings: Record<string, unknown> | null;
-  known_password: string | null;
-  created_at: string;
-};
-
-function publicUser(row: UserRow, includePassword = false) {
-  const rawSettings = { ...(row.settings || {}) };
-  delete rawSettings.passwordRecovery;
-  delete rawSettings.knownPassword;
-  return {
-    id: row.id,
-    name: row.name,
-    role: row.role,
-    email: row.email,
-    status: row.status || 'pending',
-    age: row.age,
-    height: row.height,
-    targetCalories: row.target_calories,
-    gender: row.gender,
-    activityLevel: row.activity_level,
-    goal: row.goal,
-    linkedMenuUserId: null,
-    createdAt: row.created_at,
-    settings: rawSettings,
-    knownPassword: includePassword && row.known_password ? String(row.known_password) : null,
-  };
-}
-
-async function saveKnownPassword(
-  sb: ReturnType<typeof serviceClient>,
-  userId: string,
-  password: string
-) {
-  await sb
-    .from('app_users')
-    .update({ known_password: password, updated_at: new Date().toISOString() })
-    .eq('id', userId);
-}
-
-function systemInstruction(profile?: { name?: string; age?: number; targetCalories?: number }, skipCalorieRules = false) {
-  const name = profile?.name || 'el paciente';
-  const age = profile?.age ? `${profile.age} años` : 'edad no indicada';
-  const kcal = profile?.targetCalories || 1500;
-  const dietLine = skipCalorieRules
-    ? `Estás asesorando a ${name} (${age}). NO apliques el tope de 1.500 kcal ni recortes cantidades por calorías. Reproduce o diseña el menú pedido tal cual, con raciones caseras reales.`
-    : `Estás asesorando a ${name} (${age}), dieta de ${kcal} kcal según la pauta de Endocrinología del Hospital Morales Meseguer (origen 1.500 kcal, adaptada a este perfil).`;
-  return `Eres "El Gordólogo": nutricionista clínico con humor seco, inteligente y elegante. Hablas como un médico culto y cercano de Murcia, no como un influencer ni como una niña de cuatro años.
-
-${dietLine}
-
-Tono (obligatorio):
-- Cercano, breve, con un toque de ironía fina. Nunca cursi.
-- Prohibido: "de mi alma", "cielo", "bombón", "mi vida", diminutivos empalagosos, "menuda bomba", "botellita", "bajo llave", palmaditas, infantilismos y emojis en exceso (como mucho uno, si aporta).
-- No hagas teatro. No te presentes en cada respuesta. Usa el nombre de pila como mucho una vez, en tono adulto.
-- Firmes con alcohol, azúcar y trampas; educados, no sermón de abuela.
-- Español claro, frases cortas, sin tecnicismos innecesarios. Accesible para personas mayores, no condescendiente.
-
-${skipCalorieRules
-    ? `Reglas:
-1. No recortes ni escalas por calorías.
-2. Recetas elaboradas: prioriza Thermomix/Cookidoo si encaja.
-3. Responde siempre en español, JSON si se pide.`
-    : `Reglas clínicas (escala cantidades a ${kcal} kcal respecto a 1.500):
-1. Carnes magras 100g en crudo (pollo, pavo, conejo, ternera) a 1.500 kcal.
-2. Pescados blancos 150g; azules/semigrasos 100g a 1.500 kcal.
-3. Legumbres 60g crudas a 1.500 kcal.
-4. Arroz o pasta: 60g crudos en comida; 45g en cena a 1.500 kcal.
-5. Patatas 200g o 100g según plato a 1.500 kcal.
-6. AOVE: máximo 1–1,5 cucharadas por comida a 1.500 kcal.
-7. Pan integral ~20g (o 2 biscotes) en la mayoría de tomas a 1.500 kcal.
-8. Recetas elaboradas: prioriza Thermomix/Cookidoo.
-9. Responde siempre en español.`}
-`;
-}
-
-function isRetryableGeminiStatus(status: number, message: string): boolean {
-  const m = message.toLowerCase();
-  if (status === 429 || status === 503 || status === 500) return true;
-  return /high demand|unavailable|overload|resource exhausted|try again|no longer available|not found|not supported/i.test(m);
-}
-
-async function callGemini(
-  apiKey: string,
-  userText: string,
-  jsonMode: boolean,
-  profile?: { name?: string; age?: number; targetCalories?: number },
-  skipCalorieRules = false
-): Promise<string> {
-  const models = jsonMode
-    ? [
-        'gemini-3.5-flash',
-        'gemini-3.6-flash',
-        'gemini-3.8-flash',
-        'gemini-3.1-flash-lite',
-        'gemini-3.5-flash-lite',
-        'gemini-2.5-flash',
-        'gemini-flash-latest',
-      ]
-    : [
-        'gemini-3.1-flash-lite',
-        'gemini-3.5-flash-lite',
-        'gemini-3.8-flash',
-        'gemini-3.6-flash',
-        'gemini-3.5-flash',
-        'gemini-2.5-flash-lite',
-        'gemini-2.5-flash',
-        'gemini-flash-latest',
-      ];
-  const isAuthKey = apiKey.startsWith('AQ.');
-  const body: Record<string, unknown> = {
-    system_instruction: { parts: [{ text: systemInstruction(profile, skipCalorieRules) }] },
-    contents: [{ role: 'user', parts: [{ text: userText }] }],
-  };
-  if (jsonMode) {
-    body.generationConfig = { responseMimeType: 'application/json' };
-  }
-
-  for (const model of models) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-    const url = isAuthKey ? endpoint : `${endpoint}?key=${encodeURIComponent(apiKey)}`;
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (isAuthKey) headers['x-goog-api-key'] = apiKey;
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-      });
-      const raw = await res.json();
-      if (!res.ok) {
-        const msg = String(raw?.error?.message || `HTTP ${res.status}`);
-        if (isRetryableGeminiStatus(res.status, msg)) continue;
-        continue;
-      }
-      const text = raw?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || '';
-      if (text.trim()) return String(text).trim();
-    } catch {
-      continue;
-    }
-  }
-  throw new Error('IA_SATURADA');
-}
-
-function extractBearer(req: Request): string | null {
-  const h = req.headers.get('Authorization') || '';
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1].trim() : null;
-}
-
-async function listUsers(sb: ReturnType<typeof serviceClient>, includePasswords = false) {
-  const { data } = await sb.from('app_users').select('*').order('created_at');
-  return (data || []).map((row) => publicUser(row as UserRow, includePasswords));
-}
-
-async function ensureAdminRow(sb: ReturnType<typeof serviceClient>) {
-  const { data } = await sb.from('app_admin').select('id').eq('id', 1).maybeSingle();
-  if (data) return;
-  await sb.from('app_admin').insert({
-    id: 1,
-    password_salt: 'legacy',
-    password_hash: 'legacy',
-    gemini_api_key: null,
-  });
-}
-
-function randomTempPassword(len = 10): string {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const bytes = new Uint8Array(len);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
-}
-
-async function loadMailSmtp(sb: ReturnType<typeof serviceClient>) {
-  const { data } = await sb
-    .from('app_admin')
-    .select('mail_smtp_user, mail_smtp_pass, mail_from_name')
-    .eq('id', 1)
-    .maybeSingle();
-  const user = String(data?.mail_smtp_user || '').trim();
-  const pass = String(data?.mail_smtp_pass || '').replace(/\s+/g, '');
-  const fromName = String(data?.mail_from_name || 'Mi Gordólogo').trim() || 'Mi Gordólogo';
-  if (!user || !pass) return null;
-  return { user, pass, fromName };
-}
-
-/** Envío gratis vía Gmail SMTP (App Password). Sirve para Gmail, Hotmail, etc. como destino. */
-async function sendMailViaGmail(opts: {
-  smtpUser: string;
-  smtpPass: string;
-  fromName: string;
-  to: string;
-  subject: string;
-  html: string;
-  text: string;
-}) {
-  const nodemailer = await import('npm:nodemailer@6.9.16');
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user: opts.smtpUser, pass: opts.smtpPass },
-  });
-  await transporter.sendMail({
-    from: `"${opts.fromName}" <${opts.smtpUser}>`,
-    to: opts.to,
-    subject: opts.subject,
-    html: opts.html,
-    text: opts.text,
-  });
-}
-
-async function countApproved(sb: ReturnType<typeof serviceClient>) {
-  // Solo cuentan perfiles ya vinculados a Supabase Auth
-  const { count } = await sb
-    .from('app_users')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'approved')
-    .not('auth_user_id', 'is', null);
-  return count || 0;
-}
-
-async function loadContext(sb: ReturnType<typeof serviceClient>, jwt: string | null) {
-  if (!jwt) return null;
-  const { data: authData, error } = await sb.auth.getUser(jwt);
-  if (error || !authData?.user) return null;
-  const authUid = authData.user.id;
-
-  let { data: authProfile } = await sb
-    .from('app_users')
-    .select('*')
-    .eq('auth_user_id', authUid)
-    .maybeSingle();
-
-  // Perfil creado por trigger puede tardar un instante
-  if (!authProfile) {
-    await new Promise((r) => setTimeout(r, 400));
-    const retry = await sb.from('app_users').select('*').eq('auth_user_id', authUid).maybeSingle();
-    authProfile = retry.data;
-  }
-
-  if (!authProfile) return null;
-
-  let acting = authProfile as UserRow;
-  if (authProfile.role === 'superadmin' && authProfile.status === 'approved') {
-    const { data: actingRow } = await sb
-      .from('app_acting')
-      .select('acting_user_id')
-      .eq('auth_user_id', authUid)
-      .maybeSingle();
-    if (actingRow?.acting_user_id) {
-      const { data: target } = await sb
-        .from('app_users')
-        .select('*')
-        .eq('id', actingRow.acting_user_id)
-        .maybeSingle();
-      if (target) acting = target as UserRow;
-    }
-  }
-
-  return {
-    authUid,
-    auth: authProfile as UserRow,
-    acting,
-  };
-}
-
-function requireApproved(ctx: { auth: UserRow }) {
-  if (ctx.auth.status !== 'approved') {
-    return json(
-      {
-        ok: false,
-        error:
-          ctx.auth.status === 'rejected'
-            ? 'Tu cuenta fue rechazada. Contacta con el administrador.'
-            : 'Tu cuenta está pendiente de aprobación.',
-        authUser: publicUser(ctx.auth),
-        status: ctx.auth.status,
-      },
-      403
-    );
-  }
-  return null;
-}
+import {
+  ADMIN_EMAIL,
+  anonAuthClient,
+  checkRateLimit,
+  countApproved,
+  ensureAdminRow,
+  listUsersPublic,
+  loadContext,
+  normalizeEmail,
+  publicUser,
+  readDecryptedPassword,
+  requireAdmin,
+  requireApproved,
+  requireAuth,
+  saveEncryptedPassword,
+  serviceClient,
+  type UserRow,
+} from './_lib/auth.ts';
+import { handleAiAction, isLikelyGeminiKey, normalizeGeminiKey } from './_lib/gemini.ts';
+import { corsHeaders, extractBearer, extractClientIp, json, PUBLIC_APP_URL } from './_lib/http.ts';
+import {
+  buildNewSignupAdminEmail,
+  buildPasswordResetEmail,
+  buildTestEmail,
+  buildUserApprovedEmail,
+  loadMailSmtp,
+  saveMailSmtp,
+  sendMail,
+} from './_lib/mail.ts';
+import {
+  generateSixDigitCode,
+  hashResetCode,
+  randomTempPassword,
+  timingSafeEqual,
+} from './_lib/vault.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -349,127 +51,377 @@ Deno.serve(async (req) => {
 
   const action = String(payload.action || '');
   const jwt = extractBearer(req);
+  const clientIp = extractClientIp(req);
   const sb = serviceClient();
 
   try {
+    // =====================================================================
+    // 1. ACCIONES PÚBLICAS (sin exponer datos de admin, usuarios ni API keys)
+    // =====================================================================
     if (action === 'status') {
-      const { data: admin } = await sb.from('app_admin').select('id, gemini_api_key').eq('id', 1).maybeSingle();
       const usersRes = await sb.from('app_users').select('id', { count: 'exact', head: true });
       if (usersRes.error) {
         return json({
           ok: true,
           backend: true,
-          hasAdmin: Boolean(admin),
-          hasUsers: false,
           needsBootstrap: true,
-          hasGemini: Boolean(admin?.gemini_api_key),
-          users: [],
-          error: usersRes.error.message,
         });
       }
       const approved = await countApproved(sb);
-      const users = await listUsers(sb);
-      const mail = await loadMailSmtp(sb);
       return json({
         ok: true,
         backend: true,
-        hasAdmin: Boolean(admin) || approved > 0,
-        hasUsers: (usersRes.count || 0) > 0,
         needsBootstrap: approved === 0,
-        hasGemini: Boolean(admin?.gemini_api_key),
-        hasMailSmtp: Boolean(mail),
-        mailSmtpUser: mail?.user ? mail.user.replace(/(.{2}).+(@.+)/, '$1…$2') : null,
-        users: users
-          .filter((u) => u.status === 'approved')
-          .map((u) => ({ id: u.id, name: u.name, role: u.role, status: u.status })),
       });
     }
 
-    // Recuperación de contraseña gratis: genera enlace Auth y lo manda por Gmail SMTP (App Password).
-    if (action === 'requestPasswordReset') {
-      const email = String(payload.email || '')
-        .trim()
-        .toLowerCase();
-      const redirectTo = String(payload.redirectTo || '').trim();
-      if (!email || !email.includes('@')) {
+    // Registro público desde la URL -> siempre member + pending + aviso al admin
+    if (action === 'register') {
+      const name = String(payload.name || '').trim();
+      const email = normalizeEmail(payload.email);
+      const password = String(payload.password || '');
+
+      if (!name || name.length < 2) {
+        return json({ ok: false, error: 'Indica tu nombre (al menos 2 caracteres).' }, 400);
+      }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return json({ ok: false, error: 'Indica un email válido.' }, 400);
       }
+      if (password.length < 6) {
+        return json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' }, 400);
+      }
+
+      const allowedIp = await checkRateLimit(sb, 'register_ip', clientIp, 900, 6);
+      const allowedEmail = await checkRateLimit(sb, 'register_email', email, 900, 3);
+      if (!allowedIp || !allowedEmail) {
+        return json(
+          { ok: false, error: 'Demasiados intentos recientes. Espera unos minutos y vuelve a probar.' },
+          429
+        );
+      }
+
+      const { data: existingProfile } = await sb
+        .from('app_users')
+        .select('id, status')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (existingProfile) {
+        return json(
+          {
+            ok: false,
+            error:
+              existingProfile.status === 'pending'
+                ? 'Ya existe una solicitud con ese email pendiente de aprobación.'
+                : 'Ya existe una cuenta con ese email. Inicia sesión o usa «Olvidé mi contraseña».',
+          },
+          409
+        );
+      }
+
+      const { data: created, error: createErr } = await sb.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name },
+      });
+
+      if (createErr || !created.user) {
+        const msg = createErr?.message || '';
+        if (/already|registered|exists/i.test(msg)) {
+          return json(
+            {
+              ok: false,
+              error: 'Ya existe una cuenta con ese email. Inicia sesión o usa «Olvidé mi contraseña».',
+            },
+            409
+          );
+        }
+        return json({ ok: false, error: 'No se pudo completar el registro. Inténtalo de nuevo.' }, 500);
+      }
+
+      const authUid = created.user.id;
+      await new Promise((r) => setTimeout(r, 350));
+
+      const { data: triggerRow } = await sb
+        .from('app_users')
+        .select('id')
+        .eq('auth_user_id', authUid)
+        .maybeSingle();
+
+      const now = new Date().toISOString();
+      const userId = triggerRow?.id || `usr_${authUid.replace(/-/g, '')}`;
+
+      const fields = {
+        name,
+        role: 'member' as const,
+        email,
+        auth_user_id: authUid,
+        status: 'pending' as const,
+        age: Math.max(0, Number(payload.age) || 0),
+        height: Math.max(0, Number(payload.height) || 0),
+        target_calories: 1500,
+        settings: {
+          servings: 1,
+          freeDay: 5,
+          freeDayEnabled: false,
+          weighInDay: 4,
+        },
+        updated_at: now,
+      };
+
+      if (triggerRow) {
+        const { error: updErr } = await sb.from('app_users').update(fields).eq('id', triggerRow.id);
+        if (updErr) return json({ ok: false, error: updErr.message }, 500);
+      } else {
+        const { error: insErr } = await sb
+          .from('app_users')
+          .insert({ id: userId, ...fields, created_at: now });
+        if (insErr) return json({ ok: false, error: insErr.message }, 500);
+      }
+
+      await saveEncryptedPassword(sb, userId, password);
+
+      // Aviso al administrador (mejor esfuerzo; no bloquea el alta si SMTP falla)
+      try {
+        const mail = await loadMailSmtp(sb);
+        if (mail) {
+          const emailMsg = buildNewSignupAdminEmail({
+            userName: name,
+            userEmail: email,
+            appUrl: PUBLIC_APP_URL,
+          });
+          await sendMail(mail, { to: ADMIN_EMAIL, ...emailMsg });
+        }
+      } catch {
+        // Silencioso para el solicitante; el admin igualmente verá la solicitud pendiente en su panel
+      }
+
+      return json({
+        ok: true,
+        status: 'pending',
+        message:
+          'Solicitud registrada. Tu cuenta quedará activa en cuanto el administrador la apruebe.',
+      });
+    }
+
+    // Recuperación de contraseña gratuita (OTP 6 dígitos + enlace inmune a Hotmail Safe Links)
+    if (action === 'requestPasswordReset') {
+      const email = normalizeEmail(payload.email);
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return json({ ok: false, error: 'Indica un email válido.' }, 400);
+      }
+
+      const allowedEmailQuick = await checkRateLimit(sb, 'reset_email_60s', email, 60, 1);
+      if (!allowedEmailQuick) {
+        return json(
+          { ok: false, error: 'Ya hemos enviado un código hace menos de un minuto. Revisa tu bandeja o spam.' },
+          429
+        );
+      }
+
+      const allowedEmailHour = await checkRateLimit(sb, 'reset_email_1h', email, 3600, 5);
+      const allowedIpHour = await checkRateLimit(sb, 'reset_ip_1h', clientIp, 3600, 20);
+      if (!allowedEmailHour || !allowedIpHour) {
+        return json(
+          { ok: false, error: 'Demasiados intentos de recuperación. Espera un rato y vuelve a probar.' },
+          429
+        );
+      }
+
       const mail = await loadMailSmtp(sb);
       if (!mail) {
         return json(
           {
             ok: false,
             error:
-              'El correo de recuperación aún no está configurado. Pide al administrador que guarde un Gmail con “contraseña de aplicación” en Superadmin, o que te genere una contraseña temporal.',
+              'La recuperación por correo no está disponible en este momento. Contacta con el administrador.',
           },
           503
         );
       }
 
-      // URL pública fija: evita que Supabase Site URL (localhost) rompa el enlace del email.
-      const PROD_APP = 'https://janavarrorey.github.io/mi-gordologo';
-      let safeRedirect = redirectTo;
-      if (!safeRedirect || /localhost|127\.0\.0\.1/i.test(safeRedirect)) {
-        safeRedirect = `${PROD_APP}/#/restablecer-clave`;
+      const genericSuccess = {
+        ok: true,
+        message:
+          'Si ese email está registrado, recibirás un correo en unos minutos con un código de 6 dígitos y un enlace (revisa también la carpeta de spam).',
+      };
+
+      const { data: userRow } = await sb
+        .from('app_users')
+        .select('id, email, auth_user_id')
+        .eq('email', email)
+        .not('auth_user_id', 'is', null)
+        .maybeSingle();
+
+      if (!userRow?.auth_user_id) {
+        return json(genericSuccess);
       }
 
-      const { data: linkData, error: linkErr } = await sb.auth.admin.generateLink({
-        type: 'recovery',
+      const code = generateSixDigitCode();
+      const codeHash = await hashResetCode(email, code);
+      const nowIso = new Date().toISOString();
+      const expiresIso = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+      // Invalidar códigos previos sin usar para este email
+      await sb
+        .from('password_reset_codes')
+        .update({ used_at: nowIso })
+        .eq('email', email)
+        .is('used_at', null);
+
+      const { error: codeInsertErr } = await sb.from('password_reset_codes').insert({
         email,
-        options: { redirectTo: safeRedirect },
+        code_hash: codeHash,
+        expires_at: expiresIso,
+        attempts: 0,
       });
-      const hashedToken = String(linkData?.properties?.hashed_token || '');
-      if (linkErr || !hashedToken) {
-        // No filtramos si el email existe o no (anti-enumeración), pero sí si SMTP falta
-        return json({
-          ok: true,
-          message: 'Si ese email está registrado, recibirás un enlace en unos minutos.',
-        });
-      }
 
-      // Query ANTES del hash: Gmail/Safari no rompen ?th=… (sí suelen romper #/ruta?th=).
-      const actionLink = `${PROD_APP}/?th=${encodeURIComponent(hashedToken)}#/restablecer-clave`;
-      try {
-        await sendMailViaGmail({
-          smtpUser: mail.user,
-          smtpPass: mail.pass,
-          fromName: mail.fromName,
-          to: email,
-          subject: 'Restablecer contraseña — Mi Gordólogo',
-          text: `Hola,\n\nPara elegir una contraseña nueva abre este enlace:\n${actionLink}\n\nSi no pediste esto, ignora el mensaje.\n`,
-          html: `<p>Hola,</p><p>Para elegir una contraseña nueva en <strong>Mi Gordólogo</strong>, pulsa el botón:</p><p><a href="${actionLink}" style="display:inline-block;padding:12px 18px;background:#047857;color:#fff;border-radius:12px;text-decoration:none;font-weight:700">Restablecer contraseña</a></p><p style="color:#666;font-size:12px">Si no pediste esto, ignora el mensaje.</p>`,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+      if (codeInsertErr) {
         return json(
           {
             ok: false,
-            error: `No se pudo enviar el email (${message}). Revisa la contraseña de aplicación de Gmail en Superadmin.`,
+            error:
+              'No se pudo preparar el código de recuperación en el servidor. Contacta con el administrador.',
           },
           500
         );
       }
+
+      const resetUrl = `${PUBLIC_APP_URL}/#/restablecer-clave?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}`;
+      const emailMsg = buildPasswordResetEmail({ code, resetUrl });
+
+      try {
+        await sendMail(mail, { to: email, ...emailMsg });
+      } catch {
+        return json(
+          {
+            ok: false,
+            error:
+              'No se pudo enviar el correo en este momento. Inténtalo de nuevo más tarde o contacta con el administrador.',
+          },
+          500
+        );
+      }
+
+      return json(genericSuccess);
+    }
+
+    // Confirmación atómica del código de recuperación (actualiza Auth + bóveda cifrada)
+    if (action === 'confirmPasswordReset') {
+      const email = normalizeEmail(payload.email);
+      const code = String(payload.code || '').replace(/\s+/g, '');
+      const newPassword = String(payload.newPassword || '');
+
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return json({ ok: false, error: 'Indica tu email.' }, 400);
+      }
+      if (!/^\d{6}$/.test(code)) {
+        return json({ ok: false, error: 'El código debe tener 6 dígitos.' }, 400);
+      }
+      if (newPassword.length < 6) {
+        return json({ ok: false, error: 'La nueva contraseña debe tener al menos 6 caracteres.' }, 400);
+      }
+
+      const allowedVerify = await checkRateLimit(sb, 'reset_confirm_ip', clientIp, 900, 15);
+      if (!allowedVerify) {
+        return json({ ok: false, error: 'Demasiados intentos. Espera unos minutos.' }, 429);
+      }
+
+      const { data: codeRow } = await sb
+        .from('password_reset_codes')
+        .select('*')
+        .eq('email', email)
+        .is('used_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!codeRow) {
+        return json(
+          { ok: false, error: 'El código es incorrecto o ha caducado. Solicita uno nuevo.' },
+          400
+        );
+      }
+
+      const now = new Date();
+      if (new Date(codeRow.expires_at).getTime() < now.getTime() || (codeRow.attempts || 0) >= 5) {
+        await sb
+          .from('password_reset_codes')
+          .update({ used_at: now.toISOString() })
+          .eq('id', codeRow.id);
+        return json(
+          { ok: false, error: 'El código ha caducado o superó el límite de intentos. Solicita uno nuevo.' },
+          400
+        );
+      }
+
+      const expectedHash = await hashResetCode(email, code);
+      if (!timingSafeEqual(expectedHash, String(codeRow.code_hash || ''))) {
+        const nextAttempts = (codeRow.attempts || 0) + 1;
+        await sb
+          .from('password_reset_codes')
+          .update({
+            attempts: nextAttempts,
+            ...(nextAttempts >= 5 ? { used_at: now.toISOString() } : {}),
+          })
+          .eq('id', codeRow.id);
+        return json(
+          { ok: false, error: 'Código incorrecto. Revisa el correo e inténtalo de nuevo.' },
+          400
+        );
+      }
+
+      const { data: userRow } = await sb
+        .from('app_users')
+        .select('id, auth_user_id')
+        .eq('email', email)
+        .not('auth_user_id', 'is', null)
+        .maybeSingle();
+
+      if (!userRow?.auth_user_id) {
+        return json({ ok: false, error: 'Cuenta no encontrada.' }, 404);
+      }
+
+      const { error: authErr } = await sb.auth.admin.updateUserById(userRow.auth_user_id, {
+        password: newPassword,
+      });
+      if (authErr) {
+        return json({ ok: false, error: 'No se pudo actualizar la contraseña.' }, 500);
+      }
+
+      await saveEncryptedPassword(sb, userRow.id, newPassword);
+      await sb
+        .from('password_reset_codes')
+        .update({ used_at: now.toISOString() })
+        .eq('email', email)
+        .is('used_at', null);
+
       return json({
         ok: true,
-        message: 'Si ese email está registrado, recibirás un enlace en unos minutos.',
+        message: 'Contraseña actualizada correctamente. Ya puedes iniciar sesión.',
       });
     }
 
-    // Primer administrador (solo si no hay nadie aprobado)
+    // Primer administrador (solo si no existe ningún usuario aprobado)
     if (action === 'bootstrapAdmin') {
-      const email = String(payload.email || '')
-        .trim()
-        .toLowerCase();
+      const email = normalizeEmail(payload.email);
       const password = String(payload.password || '');
       const name = String(payload.name || 'Admin').trim() || 'Admin';
       if (!email || !email.includes('@')) {
         return json({ ok: false, error: 'Indica un email válido.' }, 400);
       }
+      if (email !== ADMIN_EMAIL) {
+        return json(
+          { ok: false, error: `Solo el email administrador autorizado (${ADMIN_EMAIL}) puede inicializar el sistema.` },
+          403
+        );
+      }
       if (password.length < 8) {
         return json({ ok: false, error: 'La contraseña debe tener al menos 8 caracteres.' }, 400);
       }
       if ((await countApproved(sb)) > 0) {
-        return json({ ok: false, error: 'Ya hay un administrador. Regístrate y espera aprobación.' }, 409);
+        return json({ ok: false, error: 'Ya existe un administrador. Regístrate y espera aprobación.' }, 409);
       }
 
       await ensureAdminRow(sb);
@@ -481,11 +433,10 @@ Deno.serve(async (req) => {
         user_metadata: { name },
       });
       if (createErr || !created.user) {
-        return json({ ok: false, error: createErr?.message || 'No se pudo crear el usuario Auth.' }, 500);
+        return json({ ok: false, error: createErr?.message || 'No se pudo crear el administrador.' }, 500);
       }
 
       const authUid = created.user.id;
-      // El trigger puede haber creado usr_… pending; lo convertimos en pepe superadmin aprobado
       await sb.from('app_users').delete().eq('auth_user_id', authUid);
 
       const now = new Date().toISOString();
@@ -522,102 +473,433 @@ Deno.serve(async (req) => {
         if (error) return json({ ok: false, error: error.message }, 500);
       }
 
-      // Opcional: semilla María sin Auth (solo datos locales migrados)
-      const menusByUser = (payload.menusByUser || {}) as Record<string, unknown>;
-      const measurementsByUser = (payload.measurementsByUser || {}) as Record<string, unknown>;
-      const meta = (payload.meta || {}) as Record<string, string>;
-      for (const uid of Object.keys(menusByUser)) {
-        await sb.from('user_menus').upsert({
-          user_id: uid,
-          weeks: menusByUser[uid],
-          edited: meta[`menus_edited_${uid}`] === '1',
-          updated_at: now,
-        });
-      }
-      for (const uid of Object.keys(measurementsByUser)) {
-        await sb.from('user_measurements').upsert({
-          user_id: uid,
-          payload: measurementsByUser[uid],
-          updated_at: now,
-        });
-      }
+      await saveEncryptedPassword(sb, pepeId, password);
 
-      const { data: admin } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
       const { data: pepe } = await sb.from('app_users').select('*').eq('id', pepeId).maybeSingle();
       return json({
         ok: true,
         message: 'Administrador creado. Entra con tu email y contraseña.',
-        hasGemini: Boolean(admin?.gemini_api_key),
         authUser: pepe ? publicUser(pepe as UserRow) : null,
         needsSignIn: true,
       });
     }
 
+    // =====================================================================
+    // 2. ACCIONES AUTENTICADAS
+    // =====================================================================
+    const ctx = await loadContext(sb, jwt);
+
     if (action === 'logout') {
-      const ctx = await loadContext(sb, jwt);
       if (ctx) {
         await sb.from('app_acting').delete().eq('auth_user_id', ctx.authUid);
       }
       return json({ ok: true });
     }
 
-    const ctx = await loadContext(sb, jwt);
-
     if (action === 'getMyProfile') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      // Recarga fila para traer known_password actualizado
-      const { data: fresh } = await sb.from('app_users').select('*').eq('id', ctx.auth.id).maybeSingle();
-      const authRow = (fresh || ctx.auth) as UserRow;
+      const unauth = requireAuth(ctx);
+      if (unauth) return unauth;
       return json({
         ok: true,
-        authUser: publicUser(authRow, true),
-        actingUser: publicUser(ctx.acting, ctx.acting.id === authRow.id),
-        status: authRow.status,
-        knownPassword: authRow.known_password || null,
+        isAdmin: ctx!.isAdmin,
+        authUser: publicUser(ctx!.auth),
+        actingUser: publicUser(ctx!.acting),
+        status: ctx!.auth.status,
       });
     }
 
-    if (action === 'openAsUser') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      if (ctx.auth.role !== 'superadmin') {
-        return json({ ok: false, error: 'Solo el administrador puede abrir otros perfiles.' }, 401);
+    // Sincronización silenciosa en el primer login de cuentas previas sin bóveda cifrada
+    if (action === 'syncOwnPasswordVault') {
+      const unauth = requireAuth(ctx);
+      if (unauth) return unauth;
+      const password = String(payload.password || '');
+      if (password.length < 6) {
+        return json({ ok: false, error: 'Contraseña inválida.' }, 400);
       }
+      const userEmail = normalizeEmail(ctx!.auth.email);
+      if (!userEmail) {
+        return json({ ok: false, error: 'Cuenta sin email.' }, 400);
+      }
+      // Verificamos que la contraseña coincida realmente con Supabase Auth antes de guardarla
+      const verifier = anonAuthClient();
+      const { error: verifyErr } = await verifier.auth.signInWithPassword({
+        email: userEmail,
+        password,
+      });
+      if (verifyErr) {
+        return json({ ok: false, error: 'Credenciales no verificadas.' }, 401);
+      }
+      await saveEncryptedPassword(sb, ctx!.auth.id, password);
+      return json({ ok: true });
+    }
+
+    if (action === 'changeOwnPassword') {
+      const unauth = requireAuth(ctx);
+      if (unauth) return unauth;
+      const blocked = requireApproved(ctx!);
+      if (blocked) return blocked;
+
+      const password = String(payload.password || '');
+      if (password.length < 6) {
+        return json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' }, 400);
+      }
+
+      const { error } = await sb.auth.admin.updateUserById(ctx!.authUid, { password });
+      if (error) return json({ ok: false, error: 'No se pudo actualizar la contraseña.' }, 500);
+
+      await saveEncryptedPassword(sb, ctx!.auth.id, password);
+      return json({
+        ok: true,
+        message: 'Contraseña actualizada correctamente.',
+      });
+    }
+
+    if (action === 'getState') {
+      const unauth = requireAuth(ctx);
+      if (unauth) return unauth;
+
+      if (ctx!.auth.status !== 'approved') {
+        return json({
+          ok: true,
+          pending: true,
+          isAdmin: false,
+          status: ctx!.auth.status,
+          authUser: publicUser(ctx!.auth),
+          actingUser: publicUser(ctx!.auth),
+          users: [publicUser(ctx!.auth)],
+        });
+      }
+
+      const uid = ctx!.acting.id;
+      const [{ data: menus }, { data: meas }] = await Promise.all([
+        sb.from('user_menus').select('*').eq('user_id', uid).maybeSingle(),
+        sb.from('user_measurements').select('*').eq('user_id', uid).maybeSingle(),
+      ]);
+
+      const authPublic = publicUser(ctx!.auth);
+      const actingPublic = publicUser(ctx!.acting);
+      const needsVaultSync = !ctx!.auth.password_enc;
+
+      if (!ctx!.isAdmin) {
+        return json({
+          ok: true,
+          isAdmin: false,
+          authUser: authPublic,
+          actingUser: authPublic,
+          users: [authPublic],
+          needsVaultSync,
+          menus: menus?.weeks ?? null,
+          menusEdited: Boolean(menus?.edited),
+          menusUpdatedAt: menus?.updated_at ?? null,
+          measurements: meas?.payload ?? null,
+          measurementsUpdatedAt: meas?.updated_at ?? null,
+        });
+      }
+
+      const allUsers = await listUsersPublic(sb);
+      const pendingCount = allUsers.filter((u) => u.status === 'pending').length;
+
+      return json({
+        ok: true,
+        isAdmin: true,
+        authUser: authPublic,
+        actingUser: actingPublic,
+        users: allUsers,
+        pendingCount,
+        needsVaultSync,
+        menus: menus?.weeks ?? null,
+        menusEdited: Boolean(menus?.edited),
+        menusUpdatedAt: menus?.updated_at ?? null,
+        measurements: meas?.payload ?? null,
+        measurementsUpdatedAt: meas?.updated_at ?? null,
+      });
+    }
+
+    if (action === 'updateProfile') {
+      const unauth = requireAuth(ctx);
+      if (unauth) return unauth;
+      const blocked = requireApproved(ctx!);
+      if (blocked) return blocked;
+
+      const targetId = String(payload.userId || ctx!.acting.id);
+      if (!ctx!.isAdmin && targetId !== ctx!.auth.id) {
+        return json({ ok: false, error: 'No puedes editar otro perfil.' }, 403);
+      }
+
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (payload.name != null) patch.name = String(payload.name).trim();
+      if (payload.age != null) patch.age = Number(payload.age);
+      if (payload.height != null) patch.height = Number(payload.height);
+      if (payload.targetCalories != null) patch.target_calories = Number(payload.targetCalories);
+      if (payload.gender !== undefined) patch.gender = payload.gender;
+      if (payload.activityLevel !== undefined) patch.activity_level = payload.activityLevel;
+      if (payload.goal !== undefined) patch.goal = payload.goal;
+      if (payload.settings && typeof payload.settings === 'object') {
+        const { data: targetRow } = await sb
+          .from('app_users')
+          .select('settings')
+          .eq('id', targetId)
+          .maybeSingle();
+        const current = (targetRow?.settings as Record<string, unknown>) || {};
+        const incoming = { ...(payload.settings as Record<string, unknown>) };
+        delete incoming.passwordRecovery;
+        delete incoming.knownPassword;
+        delete incoming.password_enc;
+        patch.settings = { ...current, ...incoming };
+      }
+
+      const { error } = await sb.from('app_users').update(patch).eq('id', targetId);
+      if (error) return json({ ok: false, error: error.message }, 500);
+      const { data } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
+      return json({ ok: true, user: data ? publicUser(data as UserRow) : null });
+    }
+
+    if (action === 'saveMenus') {
+      const unauth = requireAuth(ctx);
+      if (unauth) return unauth;
+      const blocked = requireApproved(ctx!);
+      if (blocked) return blocked;
+
+      const uid = String(payload.userId || ctx!.acting.id);
+      if (!ctx!.isAdmin && uid !== ctx!.auth.id) {
+        return json({ ok: false, error: 'No puedes guardar el menú de otra persona.' }, 403);
+      }
+      const { error } = await sb.from('user_menus').upsert({
+        user_id: uid,
+        weeks: payload.weeks,
+        edited: payload.edited !== false,
+        updated_at: new Date().toISOString(),
+      });
+      if (error) return json({ ok: false, error: error.message }, 500);
+      return json({ ok: true });
+    }
+
+    if (action === 'saveMeasurements') {
+      const unauth = requireAuth(ctx);
+      if (unauth) return unauth;
+      const blocked = requireApproved(ctx!);
+      if (blocked) return blocked;
+
+      const uid = String(payload.userId || ctx!.acting.id);
+      if (!ctx!.isAdmin && uid !== ctx!.auth.id) {
+        return json({ ok: false, error: 'No puedes guardar la báscula de otra persona.' }, 403);
+      }
+      const { error } = await sb.from('user_measurements').upsert({
+        user_id: uid,
+        payload: payload.measurements ?? [],
+        updated_at: new Date().toISOString(),
+      });
+      if (error) return json({ ok: false, error: error.message }, 500);
+      return json({ ok: true });
+    }
+
+    if (
+      action === 'ask' ||
+      action === 'adjustMeal' ||
+      action === 'personalizeMenu' ||
+      action === 'importMenu'
+    ) {
+      const unauth = requireAuth(ctx);
+      if (unauth) return unauth;
+      const blocked = requireApproved(ctx!);
+      if (blocked) return blocked;
+      return handleAiAction(sb, ctx!, action, payload);
+    }
+
+    // =====================================================================
+    // 3. ACCIONES EXCLUSIVAS DE ADMINISTRADOR (jose.navarrorey@gmail.com)
+    // =====================================================================
+    if (action === 'getAdminStatus') {
+      const denied = requireAdmin(ctx);
+      if (denied) return denied;
+
+      const [{ data: admin }, allUsers, mail] = await Promise.all([
+        sb.from('app_admin').select('id, gemini_api_key').eq('id', 1).maybeSingle(),
+        listUsersPublic(sb),
+        loadMailSmtp(sb),
+      ]);
+
+      const pendingCount = allUsers.filter((u) => u.status === 'pending').length;
+
+      return json({
+        ok: true,
+        hasGemini: Boolean(admin?.gemini_api_key),
+        hasMailSmtp: Boolean(mail),
+        mailSmtpUser: mail?.smtpUser || null,
+        mailFromName: mail?.fromName || 'Mi Gordólogo',
+        pendingCount,
+        totalUsers: allUsers.length,
+        users: allUsers,
+      });
+    }
+
+    if (action === 'getAdminCredentials') {
+      const denied = requireAdmin(ctx);
+      if (denied) return denied;
+
+      const { data, error } = await sb.from('app_users').select('*').order('created_at');
+      if (error) return json({ ok: false, error: error.message }, 500);
+
+      const rows = (data || []) as UserRow[];
+      const credentials = await Promise.all(
+        rows.map(async (row) => ({
+          userId: row.id,
+          name: row.name,
+          email: row.email,
+          role: row.role,
+          status: row.status,
+          hasAuth: Boolean(row.auth_user_id),
+          password: await readDecryptedPassword(sb, row),
+        }))
+      );
+
+      return json({ ok: true, credentials });
+    }
+
+    if (action === 'listPendingUsers') {
+      const denied = requireAdmin(ctx);
+      if (denied) return denied;
+
+      const { data } = await sb
+        .from('app_users')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      return json({
+        ok: true,
+        users: (data || []).map((row) => publicUser(row as UserRow)),
+      });
+    }
+
+    if (action === 'setUserStatus') {
+      const denied = requireAdmin(ctx);
+      if (denied) return denied;
+
+      const targetId = String(payload.userId || '');
+      const status = String(payload.status || '');
+      if (!['approved', 'rejected', 'pending'].includes(status)) {
+        return json({ ok: false, error: 'Estado no válido.' }, 400);
+      }
+      if (targetId === ctx!.auth.id && status !== 'approved') {
+        return json({ ok: false, error: 'No puedes desaprobarte a ti mismo.' }, 400);
+      }
+
+      const { data: before } = await sb
+        .from('app_users')
+        .select('*')
+        .eq('id', targetId)
+        .maybeSingle();
+      if (!before) return json({ ok: false, error: 'Usuario no encontrado.' }, 404);
+
+      const { error } = await sb
+        .from('app_users')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', targetId);
+      if (error) return json({ ok: false, error: error.message }, 500);
+
+      // Si acaba de pasar a aprobado, avisamos al usuario por email (mejor esfuerzo)
+      if (status === 'approved' && before.status !== 'approved' && before.email) {
+        try {
+          const mail = await loadMailSmtp(sb);
+          if (mail) {
+            const approvedEmail = buildUserApprovedEmail({
+              userName: before.name || 'Usuario',
+              appUrl: PUBLIC_APP_URL,
+            });
+            await sendMail(mail, { to: String(before.email), ...approvedEmail });
+          }
+        } catch {
+          // No bloquea la aprobación
+        }
+      }
+
+      const { data } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
+      return json({ ok: true, user: data ? publicUser(data as UserRow) : null });
+    }
+
+    if (action === 'deleteUser') {
+      const denied = requireAdmin(ctx);
+      if (denied) return denied;
+
+      const targetId = String(payload.userId || '');
+      if (!targetId) return json({ ok: false, error: 'Falta userId.' }, 400);
+      if (targetId === ctx!.auth.id) {
+        return json({ ok: false, error: 'No puedes eliminar tu propia cuenta de administrador.' }, 400);
+      }
+
+      const { data: target } = await sb
+        .from('app_users')
+        .select('id, auth_user_id, email')
+        .eq('id', targetId)
+        .maybeSingle();
+      if (!target) return json({ ok: false, error: 'Perfil no encontrado.' }, 404);
+
+      if (normalizeEmail(target.email) === ADMIN_EMAIL) {
+        return json({ ok: false, error: 'No se puede eliminar el perfil administrador.' }, 400);
+      }
+
+      const { error: delErr } = await sb.from('app_users').delete().eq('id', targetId);
+      if (delErr) return json({ ok: false, error: delErr.message }, 500);
+
+      if (target.auth_user_id) {
+        await sb.auth.admin.deleteUser(target.auth_user_id).catch(() => null);
+      }
+
+      return json({ ok: true, message: 'Usuario eliminado correctamente.' });
+    }
+
+    if (action === 'openAsUser') {
+      const denied = requireAdmin(ctx);
+      if (denied) return denied;
+
       const targetUserId = String(payload.targetUserId || '');
-      const { data: target } = await sb.from('app_users').select('*').eq('id', targetUserId).maybeSingle();
+      if (!targetUserId || targetUserId === ctx!.auth.id) {
+        await sb.from('app_acting').delete().eq('auth_user_id', ctx!.authUid);
+        return json({
+          ok: true,
+          actingUserId: ctx!.auth.id,
+          actingUser: publicUser(ctx!.auth),
+          authUser: publicUser(ctx!.auth),
+        });
+      }
+
+      const { data: target } = await sb
+        .from('app_users')
+        .select('*')
+        .eq('id', targetUserId)
+        .maybeSingle();
       if (!target) return json({ ok: false, error: 'Perfil no encontrado.' }, 404);
       if ((target as UserRow).status !== 'approved') {
         return json({ ok: false, error: 'Ese perfil aún no está aprobado.' }, 400);
       }
+
       await sb.from('app_acting').upsert({
-        auth_user_id: ctx.authUid,
+        auth_user_id: ctx!.authUid,
         acting_user_id: target.id,
         updated_at: new Date().toISOString(),
       });
+
       return json({
         ok: true,
         actingUserId: target.id,
         actingUser: publicUser(target as UserRow),
-        authUser: publicUser(ctx.auth),
+        authUser: publicUser(ctx!.auth),
       });
     }
 
     if (action === 'createUser') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      if (ctx.auth.role !== 'superadmin') {
-        return json({ ok: false, error: 'Solo el administrador puede crear perfiles.' }, 401);
-      }
+      const denied = requireAdmin(ctx);
+      if (denied) return denied;
+
       const name = String(payload.name || '').trim();
-      const email = String(payload.email || '')
-        .trim()
-        .toLowerCase();
+      const email = normalizeEmail(payload.email);
       const password = String(payload.password || '');
       if (!name) return json({ ok: false, error: 'Falta el nombre.' }, 400);
       if (!email || !email.includes('@')) return json({ ok: false, error: 'Falta un email válido.' }, 400);
-      if (password.length < 6) return json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' }, 400);
+      if (password.length < 6) {
+        return json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' }, 400);
+      }
 
       const { data: created, error: createErr } = await sb.auth.admin.createUser({
         email,
@@ -630,12 +912,15 @@ Deno.serve(async (req) => {
       }
 
       const authUid = created.user.id;
-      await new Promise((r) => setTimeout(r, 400));
-      let { data: row } = await sb.from('app_users').select('*').eq('auth_user_id', authUid).maybeSingle();
+      await new Promise((r) => setTimeout(r, 350));
+      let { data: row } = await sb
+        .from('app_users')
+        .select('*')
+        .eq('auth_user_id', authUid)
+        .maybeSingle();
+
       const now = new Date().toISOString();
       const preferredId = String(payload.id || '').trim();
-
-      // Si el wizard pide un id concreto distinto al del trigger, reasignamos la fila
       if (row && preferredId && preferredId !== row.id) {
         await sb.from('app_users').delete().eq('id', row.id);
         row = null;
@@ -647,7 +932,7 @@ Deno.serve(async (req) => {
         role: 'member' as const,
         email,
         auth_user_id: authUid,
-        status: 'approved',
+        status: 'approved' as const,
         age: Number(payload.age) || 40,
         height: Number(payload.height) || 170,
         target_calories: Number(payload.targetCalories) || 1500,
@@ -672,6 +957,7 @@ Deno.serve(async (req) => {
       }
 
       const finalId = row?.id || userId;
+      await saveEncryptedPassword(sb, finalId, password);
 
       if (payload.weeks) {
         await sb.from('user_menus').upsert({
@@ -693,164 +979,49 @@ Deno.serve(async (req) => {
       return json({ ok: true, user: saved ? publicUser(saved as UserRow) : null });
     }
 
-    if (action === 'setUserStatus') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      if (ctx.auth.role !== 'superadmin') {
-        return json({ ok: false, error: 'Solo el administrador puede aprobar cuentas.' }, 401);
-      }
+    if (action === 'adminResetPassword' || action === 'adminSetPassword') {
+      const denied = requireAdmin(ctx);
+      if (denied) return denied;
+
       const targetId = String(payload.userId || '');
-      const status = String(payload.status || '');
-      if (!['approved', 'rejected', 'pending'].includes(status)) {
-        return json({ ok: false, error: 'Estado no válido.' }, 400);
+      const { data: target } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
+      if (!target) return json({ ok: false, error: 'Perfil no encontrado.' }, 404);
+      const authUid = (target as UserRow).auth_user_id;
+      if (!authUid) {
+        return json({ ok: false, error: 'Ese perfil no tiene cuenta de email vinculada.' }, 400);
       }
-      if (targetId === ctx.auth.id && status !== 'approved') {
-        return json({ ok: false, error: 'No puedes desaprobarte a ti mismo.' }, 400);
-      }
-      const { error } = await sb
-        .from('app_users')
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq('id', targetId);
-      if (error) return json({ ok: false, error: error.message }, 500);
-      const { data } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
-      return json({ ok: true, user: data ? publicUser(data as UserRow) : null });
-    }
 
-    if (action === 'listPendingUsers') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      if (ctx.auth.role !== 'superadmin') {
-        return json({ ok: false, error: 'Solo el administrador.' }, 401);
+      const chosen = String(payload.password || '').trim();
+      if (chosen && chosen.length < 6) {
+        return json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' }, 400);
       }
-      const { data } = await sb
-        .from('app_users')
-        .select('*')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
+
+      const nextPassword = chosen || randomTempPassword(12);
+      const { error } = await sb.auth.admin.updateUserById(authUid, { password: nextPassword });
+      if (error) return json({ ok: false, error: error.message }, 500);
+
+      await saveEncryptedPassword(sb, targetId, nextPassword);
+      const { data: refreshed } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
+
       return json({
         ok: true,
-        users: (data || []).map((row) => publicUser(row as UserRow)),
+        tempPassword: nextPassword,
+        user: publicUser((refreshed || target) as UserRow),
+        message: 'Contraseña actualizada y cifrada en la bóveda de administrador.',
       });
-    }
-
-    if (action === 'updateProfile') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      const targetId = String(payload.userId || ctx.acting.id);
-      if (ctx.auth.role !== 'superadmin' && targetId !== ctx.auth.id) {
-        return json({ ok: false, error: 'No puedes editar otro perfil.' }, 403);
-      }
-      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      if (payload.name != null) patch.name = String(payload.name).trim();
-      if (payload.age != null) patch.age = Number(payload.age);
-      if (payload.height != null) patch.height = Number(payload.height);
-      if (payload.targetCalories != null) patch.target_calories = Number(payload.targetCalories);
-      if (payload.gender !== undefined) patch.gender = payload.gender;
-      if (payload.activityLevel !== undefined) patch.activity_level = payload.activityLevel;
-      if (payload.goal !== undefined) patch.goal = payload.goal;
-      if (payload.settings && typeof payload.settings === 'object') {
-        const { data: targetRow } = await sb.from('app_users').select('settings').eq('id', targetId).maybeSingle();
-        const current = (targetRow?.settings as Record<string, unknown>) || {};
-        const incoming = { ...(payload.settings as Record<string, unknown>) };
-        delete incoming.passwordRecovery;
-        patch.settings = { ...current, ...incoming };
-      }
-      const { error } = await sb.from('app_users').update(patch).eq('id', targetId);
-      if (error) return json({ ok: false, error: error.message }, 500);
-      const { data } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
-      return json({ ok: true, user: data ? publicUser(data as UserRow) : null });
-    }
-
-    if (action === 'getState') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      if (ctx.auth.status !== 'approved') {
-        return json({
-          ok: true,
-          pending: true,
-          status: ctx.auth.status,
-          authUser: publicUser(ctx.auth),
-          actingUser: publicUser(ctx.auth),
-          users: [publicUser(ctx.auth)],
-          hasGemini: false,
-        });
-      }
-      const uid = ctx.acting.id;
-      const { data: menus } = await sb.from('user_menus').select('*').eq('user_id', uid).maybeSingle();
-      const { data: meas } = await sb.from('user_measurements').select('*').eq('user_id', uid).maybeSingle();
-      const { data: admin } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
-      const isAdmin = ctx.auth.role === 'superadmin';
-      const { data: authFresh } = await sb.from('app_users').select('*').eq('id', ctx.auth.id).maybeSingle();
-      const authRow = (authFresh || ctx.auth) as UserRow;
-      const users = isAdmin
-        ? await listUsers(sb, true)
-        : [publicUser(authRow, true)];
-      return json({
-        ok: true,
-        hasGemini: Boolean(admin?.gemini_api_key),
-        authUser: publicUser(authRow, true),
-        actingUser: publicUser(ctx.acting, ctx.acting.id === authRow.id),
-        users,
-        knownPassword: authRow.known_password || null,
-        menus: menus?.weeks ?? null,
-        menusEdited: Boolean(menus?.edited),
-        menusUpdatedAt: menus?.updated_at ?? null,
-        measurements: meas?.payload ?? null,
-        measurementsUpdatedAt: meas?.updated_at ?? null,
-      });
-    }
-
-    if (action === 'saveMenus') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      const uid = String(payload.userId || ctx.acting.id);
-      if (ctx.auth.role !== 'superadmin' && uid !== ctx.auth.id) {
-        return json({ ok: false, error: 'No puedes guardar el menú de otra persona.' }, 403);
-      }
-      const { error } = await sb.from('user_menus').upsert({
-        user_id: uid,
-        weeks: payload.weeks,
-        edited: payload.edited !== false,
-        updated_at: new Date().toISOString(),
-      });
-      if (error) return json({ ok: false, error: error.message }, 500);
-      return json({ ok: true });
-    }
-
-    if (action === 'saveMeasurements') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      const uid = String(payload.userId || ctx.acting.id);
-      if (ctx.auth.role !== 'superadmin' && uid !== ctx.auth.id) {
-        return json({ ok: false, error: 'No puedes guardar la báscula de otra persona.' }, 403);
-      }
-      const { error } = await sb.from('user_measurements').upsert({
-        user_id: uid,
-        payload: payload.measurements ?? [],
-        updated_at: new Date().toISOString(),
-      });
-      if (error) return json({ ok: false, error: error.message }, 500);
-      return json({ ok: true });
     }
 
     if (action === 'setGeminiKey') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      if (ctx.auth.role !== 'superadmin') {
-        return json({ ok: false, error: 'Sesión de superadmin no válida.' }, 401);
-      }
+      const denied = requireAdmin(ctx);
+      if (denied) return denied;
+
       const apiKey = normalizeGeminiKey(String(payload.apiKey || ''));
       if (!isLikelyGeminiKey(apiKey)) {
         return json(
           {
             ok: false,
             error:
-              'Esa no parece una clave de Google AI Studio. Debe empezar por AIza o por AQ. (las nuevas).',
+              'Esa no parece una clave de Google AI Studio. Debe empezar por AIza o por AQ.',
           },
           400
         );
@@ -864,250 +1035,56 @@ Deno.serve(async (req) => {
       return json({ ok: true, hasGemini: true });
     }
 
-    // Gmail + contraseña de aplicación (gratis) para mandar recuperaciones a Gmail/Hotmail/etc.
     if (action === 'setMailSmtp') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      if (ctx.auth.role !== 'superadmin') {
-        return json({ ok: false, error: 'Solo el administrador.' }, 401);
-      }
-      const smtpUser = String(payload.smtpUser || '')
-        .trim()
-        .toLowerCase();
-      const smtpPass = String(payload.smtpPass || '').replace(/\s+/g, '');
-      const fromName = String(payload.fromName || 'Mi Gordólogo').trim() || 'Mi Gordólogo';
-      if (!smtpUser.includes('@')) {
-        return json({ ok: false, error: 'Indica el Gmail que enviará los correos.' }, 400);
-      }
-      if (smtpPass.length < 8) {
+      const denied = requireAdmin(ctx);
+      if (denied) return denied;
+
+      const saved = await saveMailSmtp(sb, {
+        smtpUser: String(payload.smtpUser || ''),
+        smtpPass: String(payload.smtpPass || ''),
+        fromName: String(payload.fromName || 'Mi Gordólogo'),
+      });
+      return json({
+        ok: true,
+        hasMailSmtp: true,
+        mailSmtpUser: saved.smtpUser,
+        mailFromName: saved.fromName,
+      });
+    }
+
+    if (action === 'testMailSmtp') {
+      const denied = requireAdmin(ctx);
+      if (denied) return denied;
+
+      const mail = await loadMailSmtp(sb);
+      if (!mail) {
         return json(
-          {
-            ok: false,
-            error:
-              'Pega la “contraseña de aplicación” de Google (16 caracteres), no la contraseña normal de Gmail.',
-          },
+          { ok: false, error: 'Configura primero tu Gmail y contraseña de aplicación.' },
           400
         );
       }
-      await ensureAdminRow(sb);
-      const { error } = await sb
-        .from('app_admin')
-        .update({
-          mail_smtp_user: smtpUser,
-          mail_smtp_pass: smtpPass,
-          mail_from_name: fromName,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', 1);
-      if (error) return json({ ok: false, error: error.message }, 500);
-      return json({ ok: true, hasMailSmtp: true, mailSmtpUser: smtpUser });
-    }
-
-    if (action === 'adminResetPassword' || action === 'adminSetPassword') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      if (ctx.auth.role !== 'superadmin') {
-        return json({ ok: false, error: 'Solo el administrador.' }, 401);
-      }
-      const targetId = String(payload.userId || '');
-      const { data: target } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
-      if (!target) return json({ ok: false, error: 'Perfil no encontrado.' }, 404);
-      const authUid = (target as UserRow).auth_user_id;
-      if (!authUid) {
-        return json({ ok: false, error: 'Ese perfil no tiene cuenta de email vinculada.' }, 400);
-      }
-      const chosen = String(payload.password || '').trim();
-      if (chosen && chosen.length < 6) {
-        return json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' }, 400);
-      }
-      const tempPassword = chosen || randomTempPassword(12);
-      const { error } = await sb.auth.admin.updateUserById(authUid, { password: tempPassword });
-      if (error) return json({ ok: false, error: error.message }, 500);
-      await saveKnownPassword(sb, targetId, tempPassword);
-      const { data: refreshed } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
-      return json({
-        ok: true,
-        tempPassword,
-        user: publicUser((refreshed || target) as UserRow, true),
-        message: 'Contraseña actualizada y visible en Perfil / Superadmin.',
-      });
-    }
-
-    // Guarda clave en Auth + known_password (visible en Perfil / Superadmin).
-    if (action === 'saveKnownPassword') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      const password = String(payload.password || '').trim();
-      if (password.length < 6) {
-        return json({ ok: false, error: 'La contraseña debe tener al menos 6 caracteres.' }, 400);
-      }
-      const targetId = String(payload.userId || ctx.auth.id);
-      if (ctx.auth.role !== 'superadmin' && targetId !== ctx.auth.id) {
-        return json({ ok: false, error: 'Solo puedes guardar tu propia contraseña.' }, 403);
-      }
-      const { data: target } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
-      if (!target) return json({ ok: false, error: 'Perfil no encontrado.' }, 404);
-      const authUid = (target as UserRow).auth_user_id;
-      if (!authUid) {
-        return json({ ok: false, error: 'Ese perfil no tiene cuenta de email vinculada.' }, 400);
-      }
-      const { error } = await sb.auth.admin.updateUserById(authUid, { password });
-      if (error) return json({ ok: false, error: error.message }, 500);
-      await saveKnownPassword(sb, targetId, password);
-      const { data } = await sb.from('app_users').select('*').eq('id', targetId).maybeSingle();
-      return json({
-        ok: true,
-        user: data ? publicUser(data as UserRow, true) : null,
-        knownPassword: password,
-        message: 'Contraseña guardada. Ya puedes verla en tu perfil.',
-      });
-    }
-
-    if (action === 'ask' || action === 'adjustMeal') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión para usar la IA.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      const { data } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
-      const apiKey = data?.gemini_api_key;
-      if (!apiKey) {
-        return json({ ok: false, error: 'NO_GEMINI_KEY' }, 503);
-      }
-      const profile = {
-        name: ctx.acting.name,
-        age: ctx.acting.age,
-        targetCalories: ctx.acting.target_calories,
-      };
-      if (action === 'ask') {
-        const question = String(payload.question || '').slice(0, 2000);
-        if (!question.trim()) return json({ ok: false, error: 'Falta la pregunta.' }, 400);
-        const prompt = `Pregunta de ${profile.name} (dieta ${profile.targetCalories} kcal): "${question}"
-
-Responde en español, 3-6 frases, sin markdown recargado.
-Humor seco e inteligente; nada de mimos ni "de mi alma".
-Si pregunta por calorías de algo concreto, da una estimación razonable.
-Si implica alcohol, azúcar, miel o cerveza sin alcohol: prohíbelo con claridad y ofrece una alternativa.`;
-        const text = await callGemini(apiKey, prompt, false, profile);
-        return json({ ok: true, text });
+      const toEmail = normalizeEmail(payload.toEmail) || ADMIN_EMAIL;
+      if (!toEmail.includes('@')) {
+        return json({ ok: false, error: 'Indica un email de destino válido para la prueba.' }, 400);
       }
 
-      const mealType = String(payload.mealType || '');
-      const userPrompt = String(payload.userPrompt || '').slice(0, 2000);
-      const currentMeal = payload.currentMeal as Record<string, unknown> | undefined;
-      if (!mealType || !userPrompt || !currentMeal) {
-        return json({ ok: false, error: 'Faltan datos del plato.' }, 400);
+      const testMsg = buildTestEmail({ recipient: toEmail });
+      try {
+        await sendMail(mail, { to: toEmail, ...testMsg });
+        return json({
+          ok: true,
+          message: `Correo de prueba enviado a ${toEmail}. Revisa bandeja de entrada y spam.`,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return json(
+          {
+            ok: false,
+            error: `Error SMTP al enviar a ${toEmail}: ${message}`,
+          },
+          500
+        );
       }
-      const items = Array.isArray(currentMeal.items) ? currentMeal.items : [];
-      const prompt = `El usuario ${profile.name} (objetivo ${profile.targetCalories} kcal/día) quiere modificar el plato de "${mealType}".
-Plato actual:
-- Nombre: ${currentMeal.recipeName || 'Plato'}
-- Ingredientes actuales: ${items.map((i: { name?: string; quantity?: string }) => `${i.name} (${i.quantity || ''})`).join(', ')}
-
-Petición del usuario: "${userPrompt}"
-
-Ajusta cantidades al objetivo de ${profile.targetCalories} kcal.
-Por favor, devuelve un JSON válido con el siguiente formato exacto:
-{
-  "message": "Comentario breve, elegante y con ironía fina explicando el cambio (sin cursilerías)",
-  "recipeName": "Nuevo nombre del plato o receta",
-  "recipeUrl": "URL de Cookidoo o Thermomix si aplica o null",
-  "items": [
-    { "name": "Nombre ingrediente", "quantity": "Cantidad recomendada", "notes": "opcional" }
-  ]
-}`;
-      const rawText = await callGemini(apiKey, prompt, true, profile);
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) return json({ ok: true, message: rawText || 'He procesado tu petición.' });
-      const parsed = JSON.parse(jsonMatch[0]);
-      return json({
-        ok: true,
-        message: parsed.message || 'Cambio aplicado.',
-        recipeName: parsed.recipeName,
-        recipeUrl: parsed.recipeUrl ?? null,
-        items: parsed.items,
-      });
-    }
-
-    if (action === 'personalizeMenu' || action === 'importMenu') {
-      if (!ctx) return json({ ok: false, error: 'Inicia sesión.' }, 401);
-      const blocked = requireApproved(ctx);
-      if (blocked) return blocked;
-      if (ctx.acting.id === 'maria_ignacia') {
-        return json({ ok: false, error: 'El menú de María Ignacia no se sustituye: es la pauta hospitalaria.' }, 403);
-      }
-      const { data } = await sb.from('app_admin').select('gemini_api_key').eq('id', 1).maybeSingle();
-      const apiKey = data?.gemini_api_key;
-      if (!apiKey) return json({ ok: false, error: 'NO_GEMINI_KEY' }, 503);
-      const profile = {
-        name: ctx.acting.name,
-        age: ctx.acting.age,
-        targetCalories: ctx.acting.target_calories,
-      };
-
-      let prompt = '';
-      if (action === 'importMenu') {
-        const pdfText = String(payload.pdfText || '').slice(0, 24000);
-        if (pdfText.length < 40) return json({ ok: false, error: 'El PDF no tiene texto suficiente.' }, 400);
-        prompt = `Extrae SOLO comidas (almuerzo) y cenas del siguiente menú. Ignora límites calóricos. Si hay una semana, saca 7 comidas y 7 cenas; si hay más días, hasta 14 de cada.
-
-Texto del PDF:
-${pdfText}
-
-Devuelve JSON exacto:
-{
-  "estimatedDailyKcal": 2200,
-  "lunches": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }],
-  "dinners": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }]
-}`;
-      } else {
-        const intake = (payload.intake || {}) as Record<string, unknown>;
-        prompt = `Diseña un ciclo de 7 comidas y 7 cenas para ${profile.name}.
-NO fuerces 1500 kcal. Adapta a hábitos reales.
-Tomas habituales: ${JSON.stringify(intake.mealsEaten || [])}
-Deporte: ${intake.sport || 'none'} (${intake.sportDays || 0} días/semana)
-Le gusta: ${JSON.stringify(intake.likes || [])}
-Evita: ${JSON.stringify(intake.dislikes || [])}
-Alergias: ${intake.allergies || 'ninguna'}
-Notas: ${intake.notes || '—'}
-Cocina española / murciana, cantidades caseras claras (g o cucharadas). Thermomix si encaja.
-
-JSON exacto:
-{
-  "estimatedDailyKcal": 2000,
-  "lunches": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }],
-  "dinners": [{ "recipeName": "...", "items": [{ "name": "...", "quantity": "...", "notes": null }] }]
-}`;
-      }
-
-      const rawText = await callGemini(apiKey, prompt, true, profile, true);
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) return json({ ok: false, error: 'No pude interpretar el menú. Prueba de nuevo.' }, 500);
-      const parsed = JSON.parse(jsonMatch[0]);
-      return json({
-        ok: true,
-        lunches: Array.isArray(parsed.lunches) ? parsed.lunches : [],
-        dinners: Array.isArray(parsed.dinners) ? parsed.dinners : [],
-        estimatedDailyKcal: Number(parsed.estimatedDailyKcal) || null,
-      });
-    }
-
-    if (
-      action === 'bootstrapUsers' ||
-      action === 'login' ||
-      action === 'setUserPassword' ||
-      action === 'bootstrap' ||
-      action === 'loginAdmin'
-    ) {
-      return json(
-        {
-          ok: false,
-          error:
-            'Auth actualizado: usa email/contraseña de Supabase (registro, entrar u olvidé mi contraseña).',
-        },
-        400
-      );
     }
 
     return json({ ok: false, error: 'Acción desconocida' }, 400);
